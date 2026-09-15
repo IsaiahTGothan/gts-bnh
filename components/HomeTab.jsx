@@ -5,8 +5,9 @@
 // ═══════════════════════════════════════════════════════════════════════════
 import React, { useMemo, useRef, useState } from 'react';
 import { APP_VERSION, ASG_STATUS_BY_ID, DEFAULT_CHECKLIST, SERVICE_TYPES, TECHS, TECH_BY_ID, isTerminal, serviceLabel, techName } from '../lib/constants';
-import { ageLevel, buildAlerts, countBy, dailySeries, dayKey, downloadText, fmtDateTime, fmtElapsed, greeting, isToday, relTime, techLoad, toCSV } from '../lib/utils';
-import { useStore } from './GTSApp';
+import { ageLevel, buildAlerts, copyText, countBy, dailySeries, dayKey, downloadText, fmtDateTime, fmtElapsed, greeting, isToday, relTime, techLoad, toCSV } from '../lib/utils';
+import { checkOn } from '../lib/store';
+import { onlineOthers, useStore } from './GTSApp';
 import { AgeBadge, Avatar, BarList, Btn, Chip, Donut, EmptyState, Field, Icon, Input, KPI, Panel, Segmented, Select, Sparkline, StatusChip, Toggle } from './ui';
 
 export default function HomeTab() {
@@ -75,8 +76,9 @@ function Overview() {
   }, [active]);
 
   const today = dayKey(new Date(now));
-  const checks = state.checklist[today] || {};
-  const checksDone = DEFAULT_CHECKLIST.filter((_, i) => checks[i]).length;
+  const checksRaw = state.checklist[today] || {};
+  const checks = DEFAULT_CHECKLIST.map((_, i) => checkOn(checksRaw[i]));
+  const checksDone = checks.filter(Boolean).length;
 
   return (
     <div className="stack" style={{ gap: 16 }}>
@@ -328,32 +330,10 @@ function Settings() {
         </div>
       </Panel>
 
-      <Panel title="Team sync" icon="refresh" sub="Optional. Share one live board across the counter PC, iPad and phones."
-        actions={<Chip size="sm" tone={sync.status === 'idle' ? 'green' : sync.status === 'error' ? 'red' : undefined} icon={sync.status === 'idle' ? 'check' : sync.status === 'error' ? 'alert-circle' : 'info'}>
-          {sync.status === 'idle' ? 'Connected' : sync.status === 'error' ? 'Error' : sync.status === 'syncing' ? 'Syncing…' : sync.status === 'off' ? 'Off' : 'Local mode'}
-        </Chip>}>
-        <div className="stack" style={{ gap: 0 }}>
-          {sync.status === 'unconfigured' && (
-            <p className="muted" style={{ fontSize: 13, lineHeight: 1.6, paddingBottom: 10 }}>
-              This deployment is running in <b>local mode</b>: data lives in this browser only. To share it between the three of you, add a free Upstash Redis database in Vercel and set <code className="mono">UPSTASH_REDIS_REST_URL</code>, <code className="mono">UPSTASH_REDIS_REST_TOKEN</code> and <code className="mono">GTS_SYNC_KEY</code> — the README walks through it (about 5 minutes).
-            </p>
-          )}
-          <div className="setting">
-            <div><div className="setting-title">Sync on this device</div><div className="setting-desc">Turn off to keep this browser isolated.</div></div>
-            <Toggle on={s.syncEnabled !== false} onChange={(v) => set({ syncEnabled: v })} label="Sync enabled" />
-          </div>
-          <div className="setting">
-            <div><div className="setting-title">Team passcode</div><div className="setting-desc">Must match GTS_SYNC_KEY on the server.</div></div>
-            <Input type="password" value={s.syncPasscode} onChange={(e) => set({ syncPasscode: e.target.value })} placeholder="••••••" style={{ width: 160 }} className="mono" autoComplete="off" />
-          </div>
-          <div className="setting">
-            <div><div className="setting-title">Last sync</div><div className="setting-desc">{sync.error ? <span style={{ color: 'var(--red-2)' }}>{sync.error}</span> : sync.lastAt ? relTime(new Date(sync.lastAt).toISOString()) : 'Never'}</div></div>
-            <Btn size="sm" icon="refresh" onClick={sync.run} loading={sync.status === 'syncing'}>Sync now</Btn>
-          </div>
-        </div>
-      </Panel>
+      <TeamSyncPanel sync={sync} settings={s} set={set} toast={toast} sfx={sfx} confirm={confirm} />
 
-      <Panel title="Data" icon="database" sub="Everything is stored in this browser. Back it up.">
+
+      <Panel title="Data" icon="database" sub={sync.status === 'idle' ? 'Shared with the team and cached in this browser. Back it up now and then.' : 'Everything is stored in this browser. Back it up.'}>
         <div className="stack" style={{ gap: 0 }}>
           <div className="setting">
             <div><div className="setting-title">Backup</div><div className="setting-desc">Full JSON snapshot you can restore anywhere.</div></div>
@@ -371,8 +351,8 @@ function Settings() {
               : <Btn size="sm" icon="sparkles" onClick={() => { api.loadDemo(); toast('Demo data loaded — look at the Home alerts', { tone: 'success' }); }}>Load demo</Btn>}
           </div>
           <div className="setting">
-            <div><div className="setting-title">Reset</div><div className="setting-desc">Delete every record on this device. Settings stay.</div></div>
-            <Btn size="sm" variant="danger" icon="alert-triangle" onClick={() => confirm({ title: 'Delete all data?', danger: true, confirmLabel: 'Delete everything', message: 'This wipes tickets, assignments, inventory and activity from this browser. Export a backup first if you might need it.', onConfirm: () => { api.clearAll(); toast('All records deleted', { tone: 'warning' }); } })}>Reset</Btn>
+            <div><div className="setting-title">Reset</div><div className="setting-desc">{sync.status === 'idle' ? 'Delete every record on the shared board — for all three devices. Settings stay.' : 'Delete every record on this device. Settings stay.'}</div></div>
+            <Btn size="sm" variant="danger" icon="alert-triangle" onClick={() => confirm({ title: sync.status === 'idle' ? 'Delete the whole team board?' : 'Delete all data?', danger: true, confirmLabel: 'Delete everything', message: sync.status === 'idle' ? 'Team sync is on, so this wipes tickets, assignments, inventory and activity for everyone — Mike’s and Keeshon’s screens too. Export a backup first if you might need it.' : 'This wipes tickets, assignments, inventory and activity from this browser. Export a backup first if you might need it.', onConfirm: () => { api.clearAll(); toast('All records deleted', { tone: 'warning' }); } })}>Reset</Btn>
           </div>
           <div className="setting">
             <div><div className="setting-title">About</div><div className="setting-desc">GTS Hub v{APP_VERSION} · built for the B&amp;H GTS counter by ZAYS.</div></div>
@@ -380,5 +360,167 @@ function Settings() {
         </div>
       </Panel>
     </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  TEAM SYNC (Settings card) — create / enter passcode, live status, who's online
+// ═══════════════════════════════════════════════════════════════════════════
+function TeamSyncPanel({ sync, settings: s, set, toast, sfx, confirm }) {
+  const [pass, setPass] = useState('');
+  const [pass2, setPass2] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState(null);
+  const [showChange, setShowChange] = useState(false);
+  const [cur, setCur] = useState('');
+  const [next, setNext] = useState('');
+
+  const others = onlineOthers(sync);
+  const me = TECH_BY_ID[s.currentTech];
+  const status = sync.status;
+  const tone = status === 'idle' ? (sync.live ? 'green' : 'accent') : status === 'error' ? 'red' : status === 'setup' || status === 'locked' ? 'amber' : undefined;
+  const chipLabel = { idle: sync.live ? 'Live' : 'Connected', error: 'Error', setup: 'Needs passcode', locked: 'Locked', unconfigured: 'Local mode', off: 'Off', probing: 'Checking…' }[status] || status;
+
+  const doSetup = async () => {
+    setErr(null);
+    if (pass.length < 4) return setErr('Use at least 4 characters.');
+    if (pass !== pass2) return setErr('The two passcodes don’t match.');
+    setBusy(true);
+    const r = await sync.setup(pass);
+    setBusy(false);
+    if (r.ok) { setPass(''); setPass2(''); sfx('success'); }
+    else setErr(r.error);
+  };
+  const doConnect = async () => {
+    setErr(null);
+    if (!pass) return setErr('Enter the team passcode.');
+    setBusy(true);
+    await sync.connect(pass);
+    setBusy(false);
+    setPass('');
+  };
+  const doChange = async () => {
+    setErr(null);
+    if (next.length < 4) return setErr('New passcode: at least 4 characters.');
+    setBusy(true);
+    const r = await sync.change(cur, next);
+    setBusy(false);
+    if (r.ok) { setShowChange(false); setCur(''); setNext(''); toast('Team passcode changed — the other devices will ask for it', { tone: 'success' }); }
+    else setErr(r.error);
+  };
+  const onEnter = (fn) => (e) => { if (e.key === 'Enter') { e.preventDefault(); fn(); } };
+
+  const hero = (cls, icon, title, sub) => (
+    <div className={`sync-hero ${cls || ''}`}>
+      <div className="sync-hero-icon"><Icon name={icon} size={20} /></div>
+      <div className="grow"><div className="sync-hero-title">{title}</div><div className="sync-hero-sub">{sub}</div></div>
+    </div>
+  );
+
+  return (
+    <Panel title="Team sync" icon="users" sub="One live board for Mike, Keeshon and Isaiah — every edit shows up on the other screens within a second."
+      actions={<Chip size="sm" tone={tone} icon={status === 'idle' ? (sync.live ? 'zap' : 'check') : status === 'error' ? 'alert-circle' : status === 'setup' || status === 'locked' ? 'lock' : 'info'}>{chipLabel}</Chip>}>
+      <div className="stack" style={{ gap: 0 }}>
+
+        {status === 'probing' && hero('', 'refresh', 'Checking team sync…', 'Looking for the shared database.')}
+
+        {status === 'unconfigured' && (
+          <>
+            {hero('', 'database', 'Local mode', 'No team database is attached to this deployment yet, so records live in this browser only.')}
+            <ol className="steps">
+              <li>In Vercel open the <b>gts-hub</b> project → <b>Storage</b> → <b>Create Database</b> → <b>Supabase</b> (free plan).</li>
+              <li>Connect it to the project (all environments) and <b>redeploy</b>.</li>
+              <li>Reload this page — the first device creates the team passcode right here.</li>
+            </ol>
+          </>
+        )}
+
+        {status === 'setup' && (
+          <>
+            {hero('is-warn', 'lock', 'Create the team passcode', 'The database is ready. Pick a passcode the three of you will share — Mike and Keeshon type it once on their devices and they’re in.')}
+            <div className="sync-form" style={{ padding: '6px 0 4px' }}>
+              <Input type="password" value={pass} onChange={(e) => setPass(e.target.value)} placeholder="Team passcode" className="mono" autoComplete="new-password" onKeyDown={onEnter(doSetup)} />
+              <Input type="password" value={pass2} onChange={(e) => setPass2(e.target.value)} placeholder="Repeat it" className="mono" autoComplete="new-password" onKeyDown={onEnter(doSetup)} />
+              <Btn variant="primary" icon="zap" onClick={doSetup} loading={busy}>Create & connect</Btn>
+            </div>
+            {err && <div style={{ color: 'var(--red-2)', fontSize: 12.5, paddingBottom: 6 }}>{err}</div>}
+          </>
+        )}
+
+        {status === 'locked' && (
+          <>
+            {hero('is-warn', 'lock', 'Enter the team passcode', 'This device isn’t on the shared board yet. Type the passcode the team set up (ask Isaiah) and you’ll see the same tickets and drop-offs as everyone else.')}
+            <div className="sync-form" style={{ padding: '6px 0 4px' }}>
+              <Input type="password" value={pass} onChange={(e) => setPass(e.target.value)} placeholder="Team passcode" className="mono" autoComplete="current-password" onKeyDown={onEnter(doConnect)} autoFocus />
+              <Btn variant="primary" icon="arrow-right" onClick={doConnect} loading={busy || sync.busy}>Connect</Btn>
+            </div>
+            {(err || sync.error) && <div style={{ color: 'var(--red-2)', fontSize: 12.5, paddingBottom: 6 }}>{err || sync.error}</div>}
+          </>
+        )}
+
+        {status === 'error' && (
+          <>
+            {hero('is-bad', 'alert-triangle', 'Sync problem', sync.error || 'Unknown error')}
+            {sync.needsTable && sync.sql && (
+              <div style={{ paddingBottom: 8 }}>
+                <div className="setting-desc">Paste this into Supabase → SQL editor → Run, then hit Retry.</div>
+                <pre className="sql-box">{sync.sql}</pre>
+                <div className="row" style={{ gap: 8, marginTop: 8 }}>
+                  <Btn size="sm" icon="copy" onClick={async () => { await copyText(sync.sql); toast('SQL copied', { tone: 'success' }); }}>Copy SQL</Btn>
+                  <Btn size="sm" icon="refresh" onClick={sync.run} loading={sync.busy}>Retry</Btn>
+                </div>
+              </div>
+            )}
+            {!sync.needsTable && <div className="row" style={{ gap: 8, paddingBottom: 8 }}><Btn size="sm" icon="refresh" onClick={sync.run} loading={sync.busy}>Retry</Btn></div>}
+          </>
+        )}
+
+        {status === 'off' && hero('', 'power', 'Sync is off on this device', 'This browser is working on its own copy. Turn sync back on below to rejoin the team board.')}
+
+        {status === 'idle' && (
+          <>
+            {hero(sync.live ? 'is-live' : '', sync.live ? 'zap' : 'refresh',
+              sync.live ? 'Live — shared with the team' : 'Connected — catching up every 30 s',
+              sync.live ? 'Edits from any device appear here instantly. Presence shows who has the board open.' : 'The live channel isn’t connected right now (it reconnects on its own); changes still sync on a timer.')}
+            <div className="setting" style={{ alignItems: 'flex-start' }}>
+              <div><div className="setting-title">Online now</div><div className="setting-desc">Devices with the board open.</div></div>
+              <div className="online-list" style={{ justifyContent: 'flex-end', maxWidth: 320 }}>
+                <span className="online-pill is-me"><Avatar tech={me} size="sm" /><span>{me ? me.name : 'You'} <span className="faint">· this device</span></span></span>
+                {others.map((o, i) => (
+                  <span key={o.tech || i} className="online-pill"><span className="dot is-live" /><Avatar tech={o.tech} size="sm" /><span>{techName(o.tech) === 'Unassigned' ? 'Someone (no tech picked)' : techName(o.tech)}{o.count > 1 ? <span className="faint"> ×{o.count}</span> : null}{o.station ? <span className="faint"> · {o.station}</span> : null}</span></span>
+                ))}
+                {sync.live && others.length === 0 && <span className="faint" style={{ fontSize: 12.5, alignSelf: 'center' }}>Nobody else right now</span>}
+              </div>
+            </div>
+            <div className="setting">
+              <div><div className="setting-title">Last sync</div><div className="setting-desc">{sync.lastAt ? relTime(new Date(sync.lastAt).toISOString()) : 'Never'}{sync.rev ? <span className="faint"> · rev {sync.rev}</span> : null}</div></div>
+              <Btn size="sm" icon="refresh" onClick={sync.run} loading={sync.busy}>Sync now</Btn>
+            </div>
+            <div className="setting" style={{ flexWrap: 'wrap' }}>
+              <div><div className="setting-title">Team passcode</div><div className="setting-desc">Saved on this device. Change it for everyone, or forget it here.</div></div>
+              <div className="row" style={{ gap: 8 }}>
+                <Btn size="sm" icon="lock" onClick={() => { setShowChange((v) => !v); setErr(null); }}>{showChange ? 'Cancel' : 'Change'}</Btn>
+                <Btn size="sm" variant="ghost" icon="x" onClick={() => confirm({ title: 'Forget the passcode on this device?', message: 'This device leaves the shared board until the passcode is entered again. Nothing is deleted.', confirmLabel: 'Forget', onConfirm: () => { sync.forget(); toast('Passcode forgotten on this device', { tone: 'warning' }); } })}>Forget</Btn>
+              </div>
+              {showChange && (
+                <div className="sync-form" style={{ width: '100%', paddingTop: 10 }}>
+                  <Input type="password" value={cur} onChange={(e) => setCur(e.target.value)} placeholder="Current passcode" className="mono" autoComplete="current-password" />
+                  <Input type="password" value={next} onChange={(e) => setNext(e.target.value)} placeholder="New passcode" className="mono" autoComplete="new-password" onKeyDown={onEnter(doChange)} />
+                  <Btn variant="primary" size="sm" icon="check" onClick={doChange} loading={busy}>Save for everyone</Btn>
+                  {err && <div style={{ color: 'var(--red-2)', fontSize: 12.5, width: '100%' }}>{err}</div>}
+                </div>
+              )}
+            </div>
+          </>
+        )}
+
+        {status !== 'unconfigured' && status !== 'probing' && (
+          <div className="setting" style={{ borderBottom: 0 }}>
+            <div><div className="setting-title">Sync on this device</div><div className="setting-desc">Turn off to keep this browser isolated from the team board.</div></div>
+            <Toggle on={s.syncEnabled !== false} onChange={(v) => set({ syncEnabled: v })} label="Sync enabled" />
+          </div>
+        )}
+      </div>
+    </Panel>
   );
 }

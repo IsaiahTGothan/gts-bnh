@@ -8,8 +8,9 @@
 // ═══════════════════════════════════════════════════════════════════════════
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { APP_VERSION, ASG_STATUS_BY_ID, TABS, TECHS, TECH_BY_ID, isTerminal, serviceLabel, techName } from '../lib/constants';
-import { buildDemoData, defaultState, exportJSON, loadState, migrate, parseImport, saveState, sharedSignature } from '../lib/store';
-import { syncCycle } from '../lib/sync';
+import { buildDemoData, checkOn, defaultState, exportJSON, loadState, mergeStates, migrate, parseImport, saveState, sharedSignature } from '../lib/store';
+import { changePasscode, setupPasscode, syncCycle } from '../lib/sync';
+import { openLiveChannel } from '../lib/realtime';
 import { play } from '../lib/sounds';
 import { intakeTagHTML, printHTML } from '../lib/print';
 import { buildAlerts, dayKey, downloadText, greeting, matches, nextTag, nowISO, uid } from '../lib/utils';
@@ -195,7 +196,7 @@ function useGTSStore() {
     toggleCheck: (index) => mutate((p) => {
       const k = dayKey();
       const day = { ...(p.checklist[k] || {}) };
-      day[index] = !day[index];
+      day[index] = { on: !checkOn(day[index]), at: nowISO(), by: p.settings.currentTech || null };
       return { ...p, checklist: { ...p.checklist, [k]: day } };
     }),
 
@@ -204,13 +205,26 @@ function useGTSStore() {
       const d = buildDemoData();
       return act({ ...p, tickets: [...d.tickets, ...p.tickets], assignments: [...d.assignments, ...p.assignments], inventory: [...d.inventory, ...p.inventory], activity: [...d.activity, ...p.activity].slice(0, ACTIVITY_CAP), settings: { ...p.settings, demoLoaded: true } }, 'data.demo', 'Demo data', 'Synthetic records loaded');
     }),
-    clearDemo: () => mutate((p) => ({ ...p, tickets: p.tickets.filter((x) => !x.demo), assignments: p.assignments.filter((x) => !x.demo), inventory: p.inventory.filter((x) => !x.demo), activity: p.activity.filter((x) => !x.demo), settings: { ...p.settings, demoLoaded: false } })),
-    clearAll: () => mutate((p) => ({ ...defaultState(), settings: { ...p.settings, demoLoaded: false }, meta: p.meta })),
+    // Demo / reset use tombstones (not hard deletes) so the removal also
+    // reaches the other devices when team sync is on.
+    clearDemo: () => mutate((p) => {
+      const ts = nowISO();
+      const gone = (x) => (x.demo && !x.deletedAt ? { ...x, deletedAt: ts, updatedAt: ts } : x);
+      return { ...p, tickets: p.tickets.map(gone), assignments: p.assignments.map(gone), inventory: p.inventory.map(gone), activity: p.activity.filter((x) => !x.demo), settings: { ...p.settings, demoLoaded: false } };
+    }),
+    clearAll: () => mutate((p) => {
+      const ts = nowISO();
+      const gone = (x) => (x.deletedAt ? x : { ...x, deletedAt: ts, updatedAt: ts });
+      const next = { ...p, tickets: p.tickets.map(gone), assignments: p.assignments.map(gone), inventory: p.inventory.map(gone), activity: [], checklist: {}, settings: { ...p.settings, demoLoaded: false } };
+      return act(next, 'data.reset', 'Board reset', 'All records deleted');
+    }),
     importState: (text) => {
       const incoming = parseImport(text);
       mutate((p) => ({ ...incoming, settings: { ...p.settings, demoLoaded: incoming.settings?.demoLoaded ?? p.settings.demoLoaded }, meta: p.meta }));
     },
-    replaceShared: (shared) => mutate((p) => migrate({ ...p, ...shared, settings: p.settings, meta: p.meta })),
+    // Team sync hands us the merged shared slice; merge again into the *current*
+    // state so edits made while the cycle was in flight are never lost.
+    replaceShared: (shared) => mutate((p) => migrate(mergeStates(p, shared))),
     exportJSON: () => state && exportJSON(state),
   }), [mutate, state]);
 
@@ -220,55 +234,162 @@ function useGTSStore() {
 // ═══════════════════════════════════════════════════════════════════════════
 //  TEAM SYNC LOOP (optional)
 // ═══════════════════════════════════════════════════════════════════════════
+//  status: probing → unconfigured (no database) | setup (database, no passcode yet)
+//          | locked (this device has no / a wrong passcode) | idle (connected)
+//          | error | off (turned off on this device)
+//  live:   true while the Realtime channel is subscribed (edits arrive in ~1 s;
+//          otherwise a 30 s poll + focus/visibility pulls keep things fresh).
+const PUSH_DEBOUNCE_MS = 700;
+const POLL_LIVE_MS = 120_000;
+const POLL_FALLBACK_MS = 30_000;
+
+const SYNC_INITIAL = { status: 'probing', busy: false, live: false, online: [], lastAt: null, error: null, needsTable: false, sql: null, rev: 0, realtime: null, lastPing: null };
+
 function useTeamSync(state, api, toast) {
-  const [sync, setSync] = useState({ status: 'probing', lastAt: null, error: null });
-  const ref = useRef({ rev: 0, lastSig: null, busy: false, enabled: null });
+  const [sync, setSync] = useState(SYNC_INITIAL);
+  const ref = useRef({ rev: 0, lastSig: null, busy: false, pending: null, mode: 'unknown', realtime: null, channel: null, pingTimer: null });
   const stateRef = useRef(state);
   stateRef.current = state;
+  const apiRef = useRef(api);
+  apiRef.current = api;
 
-  const run = useCallback(async (reason) => {
+  const patch = useCallback((p) => setSync((x) => ({ ...x, ...(typeof p === 'function' ? p(x) : p) })), []);
+  const disconnect = useCallback((mode, extra) => {
+    ref.current.mode = mode;
+    ref.current.realtime = null;
+    patch({ realtime: null, live: false, online: [], ...extra });
+  }, [patch]);
+
+  const run = useCallback(async (reason, opts = {}) => {
     const s = stateRef.current;
-    if (!s || ref.current.busy) return;
-    if (s.settings.syncEnabled === false) { setSync((x) => ({ ...x, status: 'off' })); return; }
+    if (!s) return;
+    if (s.settings.syncEnabled === false && reason !== 'connect') { disconnect('off', { status: 'off' }); return; }
+    if (ref.current.busy) { ref.current.pending = reason; return; }
+    const passcode = opts.passcode ?? s.settings.syncPasscode ?? '';
     ref.current.busy = true;
-    setSync((x) => ({ ...x, status: 'syncing' }));
+    patch({ busy: true });
     try {
-      const res = await syncCycle(s, ref.current.rev, s.settings.syncPasscode);
-      if (!res.enabled) { ref.current.enabled = false; setSync({ status: 'unconfigured', lastAt: null, error: null }); return; }
-      ref.current.enabled = true;
-      if (res.error) { setSync((x) => ({ ...x, status: 'error', error: res.error })); return; }
+      const dirty = ref.current.lastSig === null || sharedSignature(s) !== ref.current.lastSig;
+      const res = await syncCycle(s, ref.current.rev, passcode, { dirty, meta: { by: s.settings.currentTech || null, device: s.meta?.deviceId || null } });
+      if (!res.enabled) { disconnect('local', { status: 'unconfigured', error: null }); return; }
+      if (res.needsSetup) { disconnect('setup', { status: 'setup', error: null }); return; }
+      if (res.locked) { disconnect('locked', { status: 'locked', error: passcode ? res.error : null }); return; }
+      if (res.error) {
+        if (ref.current.mode !== 'connected') ref.current.mode = 'error';
+        patch({ status: 'error', error: res.error, needsTable: !!res.needsTable, sql: res.sql || null });
+        return;
+      }
+      ref.current.mode = 'connected';
       ref.current.rev = res.rev;
-      if (res.changed) api.replaceShared({ tickets: res.state.tickets, assignments: res.state.assignments, inventory: res.state.inventory, activity: res.state.activity, checklist: res.state.checklist });
+      if (res.changed) apiRef.current.replaceShared(res.state);
       ref.current.lastSig = sharedSignature(res.state);
-      setSync({ status: 'idle', lastAt: Date.now(), error: null });
+      if (res.realtime && (res.realtime.url !== ref.current.realtime?.url || res.realtime.anonKey !== ref.current.realtime?.anonKey)) {
+        ref.current.realtime = res.realtime;
+        patch({ realtime: res.realtime });
+      }
+      patch({ status: 'idle', lastAt: Date.now(), error: null, needsTable: false, sql: null, rev: res.rev });
       if (reason === 'manual') toast('Synced with the team', { tone: 'success' });
+      if (reason === 'connect') toast('Connected — the board is now shared live', { tone: 'success' });
     } catch (e) {
-      setSync({ status: 'error', lastAt: null, error: String(e.message || e) });
-    } finally { ref.current.busy = false; }
-  }, [api, toast]);
+      patch({ status: 'error', error: String(e?.message || e) });
+    } finally {
+      ref.current.busy = false;
+      patch({ busy: false });
+      const again = ref.current.pending;
+      ref.current.pending = null;
+      if (again) setTimeout(() => run(again), 60);
+    }
+  }, [toast, patch, disconnect]);
 
   // probe on mount
   useEffect(() => { if (state) run('probe'); }, [!!state]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // re-probe when sync is switched back on for this device
+  const enabledFlag = state?.settings.syncEnabled !== false;
+  useEffect(() => { if (enabledFlag && ref.current.mode === 'off') run('probe'); }, [enabledFlag, run]);
+
   // push (debounced) when shared data changes
   useEffect(() => {
-    if (!state || ref.current.enabled !== true) return;
-    const sig = sharedSignature(state);
-    if (sig === ref.current.lastSig) return;
-    const t = setTimeout(() => run('change'), 1800);
+    if (!state || ref.current.mode !== 'connected') return;
+    if (sharedSignature(state) === ref.current.lastSig) return;
+    const t = setTimeout(() => run('change'), PUSH_DEBOUNCE_MS);
     return () => clearTimeout(t);
   }, [state, run]);
 
-  // periodic pull + on focus
+  // periodic pull (slow when live, faster as a fallback) + on focus / visibility
   useEffect(() => {
-    if (ref.current.enabled === false) return;
-    const iv = setInterval(() => { if (ref.current.enabled) run('interval'); }, 45_000);
-    const onFocus = () => { if (ref.current.enabled) run('focus'); };
+    const tick = () => { if (ref.current.mode === 'connected' || ref.current.mode === 'error') run('interval'); };
+    const iv = setInterval(tick, sync.live ? POLL_LIVE_MS : POLL_FALLBACK_MS);
+    const onFocus = () => { if (ref.current.mode === 'connected') run('focus'); };
+    const onVis = () => { if (document.visibilityState === 'visible') onFocus(); };
     window.addEventListener('focus', onFocus);
-    return () => { clearInterval(iv); window.removeEventListener('focus', onFocus); };
+    document.addEventListener('visibilitychange', onVis);
+    return () => { clearInterval(iv); window.removeEventListener('focus', onFocus); document.removeEventListener('visibilitychange', onVis); };
+  }, [run, sync.live]);
+
+  // live channel: open once connected and the server told us where
+  const deviceId = state?.meta?.deviceId || null;
+  const rtUrl = sync.realtime?.url; const rtKey = sync.realtime?.anonKey; const rtChannel = sync.realtime?.channel;
+  const connected = sync.status === 'idle' || (sync.status === 'error' && ref.current.mode === 'connected');
+  useEffect(() => {
+    if (!connected || !rtUrl || !rtKey || !deviceId) return;
+    const presence = () => {
+      const s = stateRef.current;
+      return { tech: s?.settings.currentTech || null, station: s?.settings.stationName || '', device: deviceId };
+    };
+    const handle = openLiveChannel({
+      url: rtUrl, anonKey: rtKey, channel: rtChannel || 'gts-sync', presenceKey: deviceId, presence,
+      onPing: (p) => {
+        patch({ lastPing: { ...p, receivedAt: Date.now() } });
+        if (p.passcodeChanged) { run('ping'); return; }
+        if (p.device && p.device === deviceId) return;                       // our own write
+        if (typeof p.rev === 'number' && p.rev <= ref.current.rev) return;   // already seen
+        clearTimeout(ref.current.pingTimer);
+        ref.current.pingTimer = setTimeout(() => run('ping'), 120);
+      },
+      onPresence: (list) => patch({ online: list }),
+      onStatus: (st) => patch((x) => ({ live: st === 'SUBSCRIBED', online: st === 'SUBSCRIBED' ? x.online : [] })),
+    });
+    ref.current.channel = handle;
+    return () => { clearTimeout(ref.current.pingTimer); handle.close(); ref.current.channel = null; patch({ live: false, online: [] }); };
+  }, [connected, rtUrl, rtKey, rtChannel, deviceId, run, patch]);
+
+  // keep our presence payload fresh when the tech / station changes
+  const tech = state?.settings.currentTech || null;
+  const station = state?.settings.stationName || '';
+  useEffect(() => { ref.current.channel?.track({ tech, station, device: deviceId }); }, [tech, station, deviceId]);
+
+  const setup = useCallback(async (passcode) => {
+    let res;
+    try { res = await setupPasscode(passcode); } catch (e) { return { ok: false, error: String(e?.message || e) }; }
+    if (res.status === 200 && res.ok) {
+      apiRef.current.setSettings({ syncPasscode: passcode, syncEnabled: true });
+      ref.current.lastSig = null;
+      await run('connect', { passcode });
+      return { ok: true };
+    }
+    return { ok: false, error: res.error || `Setup failed (${res.status})`, exists: !!res.exists };
   }, [run]);
 
-  return { ...sync, run: () => run('manual') };
+  const connect = useCallback(async (passcode) => {
+    apiRef.current.setSettings({ syncPasscode: passcode, syncEnabled: true });
+    ref.current.lastSig = null;
+    await run('connect', { passcode });
+  }, [run]);
+
+  const change = useCallback(async (current, next) => {
+    let res;
+    try { res = await changePasscode(current, next); } catch (e) { return { ok: false, error: String(e?.message || e) }; }
+    if (res.status === 200 && res.ok) { apiRef.current.setSettings({ syncPasscode: next }); return { ok: true }; }
+    return { ok: false, error: res.error || (res.status === 401 ? 'Current passcode is wrong' : `Failed (${res.status})`) };
+  }, []);
+
+  const forget = useCallback(() => {
+    apiRef.current.setSettings({ syncPasscode: '' });
+    disconnect('locked', { status: 'locked', error: null });
+  }, [disconnect]);
+
+  return { ...sync, deviceId, run: () => run('manual'), setup, connect, change, forget };
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -497,7 +618,7 @@ function TopBar({ tech, onPickTech }) {
           </div>
         </nav>
         <div className="topbar-right">
-          <SyncDot sync={sync} />
+          <SyncDot sync={sync} onClick={() => goTo('home', 'settings')} />
           <Clock />
           <button className="searchbtn hidden-mobile" onClick={openPalette} title="Command palette (⌘K)"><Icon name="search" size={15} /><span>Search</span><Kbd>⌘K</Kbd></button>
           <button className={`techchip ${tech ? '' : 'is-empty'}`} onClick={onPickTech} title="Switch tech">
@@ -514,21 +635,42 @@ function TopBar({ tech, onPickTech }) {
   );
 }
 
-function SyncDot({ sync }) {
+/** Other devices currently on the channel, one entry per tech (unknown techs collapse into one). */
+export function onlineOthers(sync) {
+  const seen = new Map();
+  for (const p of sync.online || []) {
+    if (p.key === sync.deviceId || p.device === sync.deviceId) continue;
+    const id = p.tech || '?';
+    if (!seen.has(id)) seen.set(id, { tech: p.tech || null, station: p.station || '', count: 0 });
+    seen.get(id).count += 1;
+  }
+  return [...seen.values()];
+}
+
+function SyncDot({ sync, onClick }) {
+  const others = onlineOthers(sync);
   const map = {
-    idle: ['live', 'Team sync on — up to date'],
-    syncing: ['accent', 'Syncing…'],
+    idle: sync.live ? ['live', `Live — ${others.length ? `${others.map((o) => techName(o.tech) || 'Someone').join(', ')} online` : 'nobody else online right now'}`] : ['accent', 'Connected — polling (live channel reconnecting…)'],
     error: ['bad', `Sync error: ${sync.error || ''}`],
-    unconfigured: [null, 'Local mode — team sync not configured (see README)'],
+    setup: ['warn', 'Team database ready — create the team passcode in Settings'],
+    locked: ['warn', 'Enter the team passcode in Settings to join the shared board'],
+    unconfigured: [null, 'Local mode — no team database attached (see Settings)'],
     off: [null, 'Team sync turned off on this device'],
     probing: ['accent', 'Checking team sync…'],
   };
   const [tone, title] = map[sync.status] || [null, ''];
+  const label = sync.status === 'idle' ? (sync.live ? 'LIVE' : 'SYNC') : sync.status === 'error' ? 'SYNC!' : sync.status === 'setup' ? 'SETUP' : sync.status === 'locked' ? 'LOCKED' : sync.status === 'probing' ? '…' : sync.status === 'off' ? 'OFF' : 'LOCAL';
   return (
-    <span className="row hidden-mobile" style={{ gap: 6, color: 'var(--text-3)', fontSize: 11, fontFamily: 'var(--font-mono)', letterSpacing: '0.08em' }} title={title}>
+    <button type="button" className={`syncdot hidden-mobile ${sync.busy ? 'is-busy' : ''}`} title={title} onClick={onClick}>
       <span className={`dot ${tone ? `is-${tone}` : ''}`} />
-      {sync.status === 'idle' ? 'SYNC' : sync.status === 'syncing' ? 'SYNC…' : sync.status === 'error' ? 'SYNC!' : 'LOCAL'}
-    </span>
+      <span className="syncdot-label">{label}</span>
+      {sync.status === 'idle' && others.length > 0 && (
+        <span className="presence" aria-label={`${others.length} online`}>
+          {others.slice(0, 3).map((o, i) => <Avatar key={o.tech || i} tech={o.tech} size="sm" title={`${techName(o.tech) || 'Unknown tech'} · ${o.station || 'online'}`} />)}
+          {others.length > 3 && <span className="presence-more">+{others.length - 3}</span>}
+        </span>
+      )}
+    </button>
   );
 }
 
@@ -627,15 +769,16 @@ function ShortcutsModal({ onClose }) {
 }
 
 function AboutModal({ onClose }) {
-  const { state } = useStore();
+  const { state, sync } = useStore();
   const n = { t: state.tickets.filter((x) => !x.deletedAt).length, a: state.assignments.filter((x) => !x.deletedAt).length, i: state.inventory.filter((x) => !x.deletedAt).length };
+  const storage = sync.status === 'idle' ? `Shared team board (${sync.live ? 'live' : 'polling'}, rev ${sync.rev}) · cached in this browser` : 'This browser';
   return (
     <Modal title="GTS Hub" sub={`Version ${APP_VERSION} · Guest Technical Services operations console`} onClose={onClose} size="sm" icon="sparkles">
       <div className="stack" style={{ gap: 12 }}>
         <div className="row" style={{ gap: 14 }}><GTSMark size={56} /><p className="muted" style={{ lineHeight: 1.6 }}>Salesforce quick-log, overnight assignment tracking with live hold timers, auto-criticality and overdue alerts, a 124-item service catalog, and station inventory — built for the B&amp;H GTS counter.</p></div>
         <dl className="dl">
           <dt>Records</dt><dd>{n.t} tickets · {n.a} assignments · {n.i} inventory items</dd>
-          <dt>Storage</dt><dd>This browser{state.settings.demoLoaded ? ' · demo data loaded' : ''}. Export a backup from Settings.</dd>
+          <dt>Storage</dt><dd>{storage}{state.settings.demoLoaded ? ' · demo data loaded' : ''}. Export a backup from Settings.</dd>
           <dt>Built by</dt><dd><a href="https://zays.us" target="_blank" rel="noreferrer" className="row" style={{ gap: 8, display: 'inline-flex' }}><ZaysLogo height={14} /> ZAYS</a></dd>
         </dl>
       </div>

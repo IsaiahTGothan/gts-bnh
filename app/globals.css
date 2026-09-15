@@ -341,6 +341,53 @@ img, svg { display: block; max-width: 100%; }
 .badge.is-neutral { background: var(--bg-4); color: var(--text-2); box-shadow: none; }
 .badge.is-accent { background: var(--accent); color: var(--accent-ink); box-shadow: 0 0 12px -2px var(--accent); }
 
+/* ── Team sync indicator (top bar) ─────────────────────────────────────── */
+.syncdot {
+  display: inline-flex; align-items: center; gap: 7px; height: 30px; padding: 0 10px 0 9px;
+  border-radius: 999px; border: 1px solid transparent; color: var(--text-3);
+  font-size: 11px; font-family: var(--font-mono); letter-spacing: 0.08em;
+  transition: border-color var(--fast), color var(--fast), background var(--fast);
+}
+.syncdot:hover { border-color: var(--line-2); background: var(--bg-2); color: var(--text-2); }
+.syncdot.is-busy .dot { animation: syncbusy 900ms ease-in-out infinite; }
+@keyframes syncbusy { 0%, 100% { opacity: 1; transform: scale(1) } 50% { opacity: 0.45; transform: scale(0.75) } }
+.presence { display: inline-flex; align-items: center; margin-left: 2px; }
+.presence .avatar { margin-left: -7px; box-shadow: 0 0 0 2px var(--bg-1); }
+.presence .avatar:first-child { margin-left: 0; }
+.presence-more { margin-left: 4px; font-size: 10px; color: var(--text-2); }
+.online-list { display: flex; flex-wrap: wrap; gap: 8px; }
+.online-pill {
+  display: inline-flex; align-items: center; gap: 8px; padding: 4px 10px 4px 4px; border-radius: 999px;
+  border: 1px solid var(--line); background: var(--bg-2); font-size: 12.5px;
+}
+.online-pill .dot { width: 6px; height: 6px; }
+.online-pill.is-me { border-color: rgba(34,211,238,0.35); }
+.sync-hero {
+  display: flex; align-items: center; gap: 14px; padding: 14px; border-radius: 12px; margin-bottom: 8px;
+  border: 1px solid var(--line); background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 8%, var(--bg-2)), var(--bg-2));
+}
+.sync-hero.is-live { border-color: rgba(67,181,106,0.35); background: linear-gradient(135deg, color-mix(in srgb, var(--green) 10%, var(--bg-2)), var(--bg-2)); }
+.sync-hero.is-warn { border-color: rgba(245,185,66,0.35); background: linear-gradient(135deg, color-mix(in srgb, var(--amber) 10%, var(--bg-2)), var(--bg-2)); }
+.sync-hero.is-bad { border-color: rgba(239,68,68,0.35); background: linear-gradient(135deg, color-mix(in srgb, var(--red) 10%, var(--bg-2)), var(--bg-2)); }
+.sync-hero-icon {
+  width: 42px; height: 42px; border-radius: 12px; display: grid; place-items: center; flex: none;
+  background: var(--bg-3); border: 1px solid var(--line-2); color: var(--accent);
+}
+.sync-hero.is-live .sync-hero-icon { color: var(--green); }
+.sync-hero.is-warn .sync-hero-icon { color: var(--amber); }
+.sync-hero.is-bad .sync-hero-icon { color: var(--red-2); }
+.sync-hero-title { font-weight: 700; font-size: 14px; }
+.sync-hero-sub { color: var(--text-2); font-size: 12.5px; margin-top: 2px; line-height: 1.5; }
+.sync-form { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.sync-form .input { width: 190px; }
+.sql-box {
+  margin-top: 8px; padding: 10px 12px; border-radius: 10px; background: var(--bg-3); border: 1px solid var(--line);
+  font-family: var(--font-mono); font-size: 11.5px; line-height: 1.55; white-space: pre-wrap; word-break: break-word; color: var(--text-2);
+  max-height: 220px; overflow: auto;
+}
+.steps { margin: 6px 0 0; padding-left: 18px; color: var(--text-2); font-size: 13px; line-height: 1.7; }
+.steps code { font-family: var(--font-mono); font-size: 11.5px; background: var(--bg-3); padding: 1px 5px; border-radius: 5px; }
+
 .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text-3); flex: none; }
 .dot.is-live { background: var(--green); box-shadow: 0 0 0 0 rgba(67,181,106,0.6); animation: ping 2.2s ease-out infinite; }
 .dot.is-warn { background: var(--amber); }

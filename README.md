@@ -24,8 +24,9 @@ npm run dev        # http://localhost:3000
 ## Deploy to Vercel
 
 1. Push this folder to a GitHub repo.
-2. In Vercel: **Add New → Project → Import** the repo. Framework is auto-detected (Next.js). No env vars needed.
+2. In Vercel: **Add New → Project → Import** the repo. Framework is auto-detected (Next.js). No env vars needed for local mode.
 3. Deploy. Open the URL on the counter PC / iPad / phones and pick your tech in **Home → Settings**.
+4. For the shared live board, attach Supabase (see *Team sync* below).
 
 Or from the folder: `npx vercel` (then `npx vercel --prod`).
 
@@ -37,7 +38,7 @@ Or from the folder: `npx vercel` (then `npx vercel --prod`).
 * **Needs attention** — every device over the limit (default **3 days**, configurable), devices ready but not collected, waiting jobs with no update, unassigned jobs, tickets that haven’t been pushed to Salesforce, and gear checked out to closed jobs. Critical items glow red; the Home tab badge shows the critical count.
 * KPIs (open tickets, in house, overdue, ready, closed today), **Who has what** per-tech load, pipeline donut, 14-day intake sparkline, service mix, and a daily shift checklist.
 * **Activity** — audit feed of everything anyone did, with who and when.
-* **Settings** — pick your tech (auto-fills every ticket you create), overdue threshold, station name, counter phone (printed on claim tickets), dark/light theme, optional UI sounds, backups (JSON/CSV), restore, demo data, team sync.
+* **Settings** — pick your tech (auto-fills every ticket you create), overdue threshold, station name, counter phone (printed on claim tickets), dark/light theme, optional UI sounds, backups (JSON/CSV), restore, demo data, and **Team sync** (create/enter the passcode, who’s online, change or forget the passcode).
 
 ### Salesforce
 * **Quick log** at the top: order number first (the thing that matters), name optional, service type dropdown/grid (Computer, Laptop, Phone, Tablet, Camera, Printers, Lighting, Monitors, Firmware Updates, Other), description, tech. `⌘/Ctrl + Enter` saves.
@@ -63,26 +64,37 @@ The 17-area / 124-type GTS service catalog from the brief, searchable, with scop
 * `⌘K` command palette: jump to any ticket/assignment/inventory item or run an action.
 * Shortcuts: `N` new assignment · `T` new ticket · `/` search · `1–5` tabs · `?` help · `Esc` close.
 * Undo toasts, live clock, mobile bottom nav, installable (Add to Home Screen), prints via hidden iframe (no popups).
+* Top-bar sync indicator: **LIVE** (green, with the avatars of whoever else has the board open), **SETUP** / **LOCKED** (amber — click to open Settings), **LOCAL**, **SYNC!** on errors.
 
 ---
 
 ## Data & storage
 
-* Everything is stored **in the browser** (`localStorage`) on each device. It survives reloads and deploys. Clearing site data clears the records — export a backup from Settings once in a while (JSON restores anywhere; CSV is for spreadsheets).
+* Everything is cached **in the browser** (`localStorage`) on each device, and — with team sync on — mirrored in the shared Supabase document. It survives reloads and deploys. Export a backup from Settings once in a while (JSON restores anywhere; CSV is for spreadsheets).
 * **Demo data** is clearly labeled (`DEMO` chips) and removable with one click in Settings → Data.
 * Deleting is soft (undo available); records keep `updatedAt` stamps and an activity trail.
 
-## Optional: team sync (one board for all three of you)
+## Team sync — one live board for all three of you
 
-Local mode is fine when everyone uses the same station PC. To share the board across the PC, iPad and phones:
+Without a database the app runs in **local mode** (each browser keeps its own records). Attach the free Supabase database and every edit shows up on the other screens within about a second, with a “who’s online” indicator in the top bar.
 
-1. Vercel project → **Storage** → **Create Database** → **Upstash Redis** (free tier is plenty). Vercel injects `KV_REST_API_URL` and `KV_REST_API_TOKEN` automatically. (Manual alternative: create a database at upstash.com and set `UPSTASH_REDIS_REST_URL` + `UPSTASH_REDIS_REST_TOKEN` in Vercel → Settings → Environment Variables.)
-2. Add `GTS_SYNC_KEY` = a passcode the team shares (**do this** — without it anyone with the URL could read/write the board).
-3. Redeploy. On each device: Settings → Team sync → enter the passcode. The footer/top-bar dot turns green (`SYNC`).
+### Setup (once, ~3 minutes)
 
-How it works: `app/api/sync/route.js` stores one JSON document in Redis with a revision counter. Devices pull on load/focus/every 45 s and push ~2 s after a change. Writes are compare-and-set; on a conflict the app merges record-by-record (newest `updatedAt` wins, deletions are tombstoned) and retries, so two stations can’t clobber each other. Settings (your tech, theme) never sync.
+1. Vercel → project **gts-hub** → **Storage** → **Create Database** → **Supabase** (free plan). Connect it to the project for all environments. Vercel injects `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY` and `POSTGRES_URL` automatically.
+2. **Redeploy** (Deployments → ⋯ → Redeploy) so the new env vars are picked up.
+3. Open the site. The first device sees **Home → Settings → Team sync → “Create the team passcode”** — pick one and hit *Create & connect*. The table is created automatically on first contact.
+4. Mike and Keeshon open the site on their devices, go to Settings → Team sync, type the same passcode → *Connect*. The top-bar dot turns green and says **LIVE**.
 
-> Privacy note: with sync on, customer names and phone numbers live in the Redis database as well as on the devices. Check that’s OK with management before enabling; local mode keeps everything on the station device.
+If the table could not be created automatically (no `POSTGRES_URL`, or the database refused the connection), the Settings card shows the SQL to paste into Supabase → SQL editor, plus a Retry button.
+
+### How it works
+
+* `app/api/sync/route.js` (+ `lib/sync-server.js`) keeps **one JSON document** in the `gts_sync` table with a revision counter. Devices send the team passcode as a header; the server stores only a salted SHA-256 hash of it (set `GTS_SYNC_KEY` in Vercel to fix the passcode from the server instead).
+* Writes are **compare-and-set** on the revision. On a conflict the client merges record-by-record (newest `updatedAt` wins, deletions are tombstoned for 30 days, checklist toggles keep the newest tap) and retries — two stations can never clobber each other. Merges are canonical, so devices converge instead of ping-ponging.
+* After every write the server fires a **Supabase Realtime broadcast** (`{ rev }`); every open device pulls the new revision right away (≈ 1 s end-to-end, including a 0.7 s typing debounce). Presence on the same channel powers the online avatars. If the live channel drops, devices fall back to polling every 30 s and on focus, then reconnect.
+* Settings (your tech, theme, sounds, passcode) never leave the device. Reset / Clear demo tombstone records so the removal reaches everyone.
+
+> Privacy note: with sync on, customer names and phone numbers live in the Supabase database (US region by default) as well as on the devices. Row Level Security is on and the browser only ever holds the public anon key — data is read/written through the API route with the server-side key, gated by the team passcode. Keep the URL private anyway.
 
 ## Customizing
 
@@ -107,9 +119,9 @@ app/
   globals.css          design system (tokens · shell · components · responsive)
   icon.svg             favicon (original GTS mark)
   manifest.js          PWA manifest
-  api/sync/route.js    optional Upstash-backed team sync
+  api/sync/route.js    team sync API (Supabase: CAS document + realtime ping + passcode)
 components/
-  GTSApp.jsx           store, persistence, sync loop, shell, overlays, shortcuts
+  GTSApp.jsx           store, persistence, sync loop + live channel, shell, overlays, shortcuts
   HomeTab.jsx          overview · activity · settings
   SalesforceTab.jsx    quick log + ticket list
   AssignmentsTab.jsx   board / list / archive
@@ -118,13 +130,15 @@ components/
   assignment-views.jsx intake form, ticket form, detail drawer
   ui.jsx               icons, logos, buttons, panels, forms, charts
 lib/
-  constants.js · utils.js · store.js · sync.js · print.js · sounds.js · catalog.js · zays-logo.js
+  constants.js · utils.js · store.js (merge) · sync.js (client) · sync-server.js (server) · realtime.js
+  print.js · sounds.js · catalog.js · zays-logo.js
 ```
 
 ## Known limits
 
-* No login. It’s an internal tool — keep the URL private; the sync passcode only protects the shared database.
+* No login. It’s an internal tool — keep the URL private; the team passcode protects the shared database.
 * Fonts (Inter, Space Grotesk, JetBrains Mono) load from Google Fonts; on a network that blocks them the app falls back to system fonts.
 * “Push to Salesforce” is a status flag, not an integration.
-* Local mode is per-browser; team sync needs the 5-minute Upstash setup above.
+* Local mode is per-browser; the live board needs the 3-minute Supabase setup above.
+* Display tags (SF-0001 / ASG-0001) are assigned on the device; two devices creating a record in the same second can end up with the same tag (records stay distinct — ids are unique).
 * Printing uses the browser’s print dialog (works on the station PC and iPad/AirPrint).
