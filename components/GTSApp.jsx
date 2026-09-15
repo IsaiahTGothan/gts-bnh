@@ -243,6 +243,15 @@ const PUSH_DEBOUNCE_MS = 700;
 const POLL_LIVE_MS = 120_000;
 const POLL_FALLBACK_MS = 30_000;
 
+/** Each open tab gets its own id (device id + tab session) so two tabs on one PC still hear each other's pings. */
+function tabSessionId() {
+  try {
+    let id = sessionStorage.getItem('gts-tab');
+    if (!id) { id = Math.random().toString(36).slice(2, 8); sessionStorage.setItem('gts-tab', id); }
+    return id;
+  } catch { return 'tab'; }
+}
+
 const SYNC_INITIAL = { status: 'probing', busy: false, live: false, online: [], lastAt: null, error: null, needsTable: false, sql: null, rev: 0, realtime: null, lastPing: null };
 
 function useTeamSync(state, api, toast) {
@@ -270,7 +279,7 @@ function useTeamSync(state, api, toast) {
     patch({ busy: true });
     try {
       const dirty = ref.current.lastSig === null || sharedSignature(s) !== ref.current.lastSig;
-      const res = await syncCycle(s, ref.current.rev, passcode, { dirty, meta: { by: s.settings.currentTech || null, device: s.meta?.deviceId || null } });
+      const res = await syncCycle(s, ref.current.rev, passcode, { dirty, meta: { by: s.settings.currentTech || null, device: ref.current.clientId || s.meta?.deviceId || null } });
       if (!res.enabled) { disconnect('local', { status: 'unconfigured', error: null }); return; }
       if (res.needsSetup) { disconnect('setup', { status: 'setup', error: null }); return; }
       if (res.locked) { disconnect('locked', { status: 'locked', error: passcode ? res.error : null }); return; }
@@ -329,20 +338,22 @@ function useTeamSync(state, api, toast) {
 
   // live channel: open once connected and the server told us where
   const deviceId = state?.meta?.deviceId || null;
+  const clientId = useMemo(() => (deviceId ? `${deviceId}:${tabSessionId()}` : null), [deviceId]);
+  ref.current.clientId = clientId;
   const rtUrl = sync.realtime?.url; const rtKey = sync.realtime?.anonKey; const rtChannel = sync.realtime?.channel;
   const connected = sync.status === 'idle' || (sync.status === 'error' && ref.current.mode === 'connected');
   useEffect(() => {
-    if (!connected || !rtUrl || !rtKey || !deviceId) return;
+    if (!connected || !rtUrl || !rtKey || !clientId) return;
     const presence = () => {
       const s = stateRef.current;
-      return { tech: s?.settings.currentTech || null, station: s?.settings.stationName || '', device: deviceId };
+      return { tech: s?.settings.currentTech || null, station: s?.settings.stationName || '', device: deviceId, client: clientId };
     };
     const handle = openLiveChannel({
-      url: rtUrl, anonKey: rtKey, channel: rtChannel || 'gts-sync', presenceKey: deviceId, presence,
+      url: rtUrl, anonKey: rtKey, channel: rtChannel || 'gts-sync', presenceKey: clientId, presence,
       onPing: (p) => {
         patch({ lastPing: { ...p, receivedAt: Date.now() } });
         if (p.passcodeChanged) { run('ping'); return; }
-        if (p.device && p.device === deviceId) return;                       // our own write
+        if (p.device && p.device === clientId) return;                       // our own write (this tab)
         if (typeof p.rev === 'number' && p.rev <= ref.current.rev) return;   // already seen
         clearTimeout(ref.current.pingTimer);
         ref.current.pingTimer = setTimeout(() => run('ping'), 120);
@@ -352,12 +363,12 @@ function useTeamSync(state, api, toast) {
     });
     ref.current.channel = handle;
     return () => { clearTimeout(ref.current.pingTimer); handle.close(); ref.current.channel = null; patch({ live: false, online: [] }); };
-  }, [connected, rtUrl, rtKey, rtChannel, deviceId, run, patch]);
+  }, [connected, rtUrl, rtKey, rtChannel, deviceId, clientId, run, patch]);
 
   // keep our presence payload fresh when the tech / station changes
   const tech = state?.settings.currentTech || null;
   const station = state?.settings.stationName || '';
-  useEffect(() => { ref.current.channel?.track({ tech, station, device: deviceId }); }, [tech, station, deviceId]);
+  useEffect(() => { ref.current.channel?.track({ tech, station, device: deviceId, client: clientId }); }, [tech, station, deviceId, clientId]);
 
   const setup = useCallback(async (passcode) => {
     let res;
@@ -639,7 +650,7 @@ function TopBar({ tech, onPickTech }) {
 export function onlineOthers(sync) {
   const seen = new Map();
   for (const p of sync.online || []) {
-    if (p.key === sync.deviceId || p.device === sync.deviceId) continue;
+    if (p.device === sync.deviceId || (sync.deviceId && String(p.key || '').startsWith(sync.deviceId))) continue; // any tab of this device
     const id = p.tech || '?';
     if (!seen.has(id)) seen.set(id, { tech: p.tech || null, station: p.station || '', count: 0 });
     seen.get(id).count += 1;
