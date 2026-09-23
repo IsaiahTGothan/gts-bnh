@@ -571,3 +571,114 @@ export function Donut({ parts, size = 120, thickness = 14, centerLabel, centerSu
     </div>
   );
 }
+
+// ─── V3 charts: goal ring, hoverable bars, heatmap ─────────────────────────
+export function Ring({ value = 0, size = 44, stroke = 5, color = 'var(--accent)', track = 'var(--bg-4)', label, sub, className }) {
+  const r = (size - stroke) / 2, c = 2 * Math.PI * r;
+  const v = Math.max(0, Math.min(1, value || 0));
+  return (
+    <svg className={cx('ring', className)} viewBox={`0 0 ${size} ${size}`} style={{ width: size, height: size }} aria-hidden="true">
+      <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={track} strokeWidth={stroke} />
+      <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={color} strokeWidth={stroke} strokeLinecap="round"
+        strokeDasharray={`${c} ${c}`} strokeDashoffset={c * (1 - v)} transform={`rotate(-90 ${size / 2} ${size / 2})`} style={{ transition: 'stroke-dashoffset 700ms var(--ease), stroke 300ms', filter: v > 0 ? `drop-shadow(0 0 4px ${color})` : 'none' }} />
+      {label != null && <text x="50%" y="50%" textAnchor="middle" dy={sub ? '-0.05em' : '0.36em'} fill="var(--text)" fontFamily="var(--font-display)" fontWeight="700" fontSize={size * 0.32}>{label}</text>}
+      {sub && <text x="50%" y="50%" textAnchor="middle" dy="1.25em" fill="var(--text-3)" fontFamily="var(--font-mono)" fontSize={size * 0.16} letterSpacing="1">{sub}</text>}
+    </svg>
+  );
+}
+
+/**
+ * Hoverable daily chart. Each column = one day: stacked bars (tickets + drop-offs)
+ * with an optional goal line. Hover/tap any column for the exact counts.
+ */
+export function HoverChart({ series, height = 160, goal, stacked = true, onPick, compact }) {
+  const [hover, setHover] = useState(null);
+  const n = series.length || 1;
+  const max = Math.max(1, goal || 0, ...series.map((s) => s.total));
+  const W = 600, H = height, padT = 10, padB = compact ? 16 : 22, padL = 4, padR = 4;
+  const plotH = H - padT - padB;
+  const colW = (W - padL - padR) / n;
+  const barW = Math.max(3, Math.min(34, colW * 0.62));
+  const y = (v) => padT + plotH - (v / max) * plotH;
+  const active = hover != null ? series[hover] : null;
+  const today = series[series.length - 1];
+  return (
+    <div className="hchart" onMouseLeave={() => setHover(null)}>
+      <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="hchart-svg" style={{ height }}>
+        <defs>
+          <linearGradient id="hcTk" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="var(--accent)" stopOpacity="1" /><stop offset="1" stopColor="var(--accent)" stopOpacity="0.45" /></linearGradient>
+          <linearGradient id="hcAs" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="var(--violet)" stopOpacity="1" /><stop offset="1" stopColor="var(--violet)" stopOpacity="0.45" /></linearGradient>
+        </defs>
+        {[0.25, 0.5, 0.75, 1].map((f) => <line key={f} x1={padL} x2={W - padR} y1={y(max * f)} y2={y(max * f)} className="hchart-grid" />)}
+        {goal > 0 && goal <= max && <line x1={padL} x2={W - padR} y1={y(goal)} y2={y(goal)} className="hchart-goal" />}
+        {series.map((s, i) => {
+          const xc = padL + colW * i + colW / 2;
+          const tk = stacked ? s.tickets : s.total;
+          const as = stacked ? s.assignments : 0;
+          const isHover = hover === i;
+          return (
+            <g key={s.key} className={cx('hchart-col', isHover && 'is-hover', s.goalHit && 'is-hit')} onMouseEnter={() => setHover(i)} onTouchStart={() => setHover(i)} onClick={() => onPick?.(s, i)}>
+              <rect x={padL + colW * i} y={padT} width={colW} height={plotH} fill="transparent" />
+              {as > 0 && <rect x={xc - barW / 2} y={y(tk + as)} width={barW} height={Math.max(0, y(tk) - y(tk + as))} rx={2} fill="url(#hcAs)" className="hchart-bar" />}
+              {tk > 0 && <rect x={xc - barW / 2} y={y(tk)} width={barW} height={Math.max(2, y(0) - y(tk))} rx={2} fill="url(#hcTk)" className="hchart-bar" />}
+              {s.total === 0 && <rect x={xc - barW / 2} y={y(0) - 2} width={barW} height={2} rx={1} fill="var(--bg-4)" />}
+              {s.goalHit && <circle cx={xc} cy={y(s.total) - 7} r={2.5} fill="var(--green)" />}
+              {!compact && <text x={xc} y={H - 6} textAnchor="middle" className={cx('hchart-x', s === today && 'is-today')}>{s === today ? 'today' : (n > 20 ? (i % 5 === 0 ? s.short : '') : s.label)}</text>}
+            </g>
+          );
+        })}
+      </svg>
+      {active && (
+        <div className="hchart-tip" style={{ left: `${((hover + 0.5) / n) * 100}%` }}>
+          <div className="hchart-tip-date">{active.date.toLocaleDateString([], { weekday: 'long', month: 'short', day: 'numeric' })}</div>
+          <div className="hchart-tip-big">{active.total} <span>service request{active.total === 1 ? '' : 's'}</span></div>
+          <div className="hchart-tip-rows">
+            <span><i style={{ background: 'var(--accent)' }} /> {active.tickets} ticket{active.tickets === 1 ? '' : 's'}</span>
+            <span><i style={{ background: 'var(--violet)' }} /> {active.assignments} drop-off{active.assignments === 1 ? '' : 's'}</span>
+            {active.withOrder != null && <span><i style={{ background: 'var(--green)' }} /> {active.withOrder} with order #</span>}
+            {goal > 0 && <span className={active.goalHit ? 'is-hit' : ''}>{active.goalHit ? '● goal hit' : `○ ${Math.max(0, goal - active.total)} short of ${goal}`}</span>}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** 7×24 heatmap (weekday × hour). Hover a cell for the count. */
+export function Heatmap({ grid, hours = [8, 21] }) {
+  const [hover, setHover] = useState(null);
+  const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const cols = []; for (let h = hours[0]; h <= hours[1]; h++) cols.push(h);
+  const max = Math.max(1, ...grid.flatMap((r) => r.slice(hours[0], hours[1] + 1)));
+  return (
+    <div className="heat" onMouseLeave={() => setHover(null)}>
+      <div className="heat-grid" style={{ gridTemplateColumns: `34px repeat(${cols.length}, minmax(0, 1fr))` }}>
+        <span />
+        {cols.map((h) => <span key={h} className="heat-h">{h % 3 === 0 ? (h > 12 ? `${h - 12}p` : h === 12 ? '12p' : `${h}a`) : ''}</span>)}
+        {days.map((d, di) => (
+          <React.Fragment key={d}>
+            <span className="heat-d">{d}</span>
+            {cols.map((h) => {
+              const v = grid[di][h];
+              const a = v / max;
+              return <span key={h} className={cx('heat-cell', hover?.d === di && hover?.h === h && 'is-hover')} style={{ '--a': a }} onMouseEnter={() => setHover({ d: di, h, v })} title={`${d} ${h}:00 — ${v}`} />;
+            })}
+          </React.Fragment>
+        ))}
+      </div>
+      <div className="heat-foot">{hover ? <><b>{days[hover.d]} {hover.h > 12 ? `${hover.h - 12} PM` : hover.h === 12 ? '12 PM' : `${hover.h} AM`}</b> · {hover.v} service request{hover.v === 1 ? '' : 's'}</> : 'Hover a cell — brighter = busier'}</div>
+    </div>
+  );
+}
+
+/** Horizontal stat bar with two segments (e.g. order # vs no order #). */
+export function SplitBar({ a, b, labelA, labelB, colorA = 'var(--green)', colorB = 'var(--amber)' }) {
+  const total = (a || 0) + (b || 0) || 1;
+  const pa = Math.round(((a || 0) / total) * 100);
+  return (
+    <div className="split">
+      <div className="split-bar"><i style={{ width: `${pa}%`, background: colorA }} /><i style={{ width: `${100 - pa}%`, background: colorB }} /></div>
+      <div className="split-legend"><span><i style={{ background: colorA }} />{labelA} · <b>{a}</b> ({pa}%)</span><span><i style={{ background: colorB }} />{labelB} · <b>{b}</b> ({100 - pa}%)</span></div>
+    </div>
+  );
+}

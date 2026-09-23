@@ -5,10 +5,11 @@
 // ═══════════════════════════════════════════════════════════════════════════
 import React, { useMemo, useRef, useState } from 'react';
 import { APP_VERSION, ASG_STATUS_BY_ID, DEFAULT_CHECKLIST, SERVICE_TYPES, TECHS, TECH_BY_ID, isTerminal, serviceLabel, techName } from '../lib/constants';
-import { ageLevel, buildAlerts, copyText, countBy, dailySeries, dayKey, downloadText, fmtDateTime, fmtElapsed, greeting, isToday, relTime, techLoad, toCSV } from '../lib/utils';
+import { ageLevel, buildAlerts, copyText, countBy, dayKey, downloadText, fmtDateTime, fmtElapsed, greeting, isToday, relTime, techLoad, toCSV } from '../lib/utils';
 import { checkOn } from '../lib/store';
+import { computeStats } from '../lib/stats';
 import { onlineOthers, useStore } from './GTSApp';
-import { AgeBadge, Avatar, BarList, Btn, Chip, Donut, EmptyState, Field, Icon, Input, KPI, Panel, Segmented, Select, Sparkline, StatusChip, Toggle } from './ui';
+import { AgeBadge, Avatar, BarList, Btn, Chip, Donut, EmptyState, Field, HoverChart, Icon, Input, KPI, Panel, Ring, Segmented, Select, StatusChip, Toggle } from './ui';
 
 export default function HomeTab() {
   const { homeTab, setHomeTab, counts } = useStore();
@@ -41,10 +42,10 @@ function HomeGreeting() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-//  OVERVIEW
+//  OVERVIEW (V3: hero with the daily goal, hoverable intake, then the board)
 // ═══════════════════════════════════════════════════════════════════════════
 function Overview() {
-  const { state, now, goTo, openRef, newAssignment, newTicket, openAssignment, api, toast } = useStore();
+  const { state, now, goTo, openRef, newAssignment, newTicket, openAssignment, api, goal, sync } = useStore();
   const th = state.settings.overdueDays;
   const live = state.assignments.filter((a) => !a.deletedAt);
   const active = live.filter((a) => !isTerminal(a.status));
@@ -55,15 +56,15 @@ function Overview() {
   const ready = active.filter((a) => a.status === 'ready');
   const doneToday = live.filter((a) => a.pickedUpAt && isToday(a.pickedUpAt, now)).length + tickets.filter((t) => t.loggedAt && isToday(t.loggedAt, now)).length;
   const avgHold = active.length ? active.reduce((s, a) => s + (now - new Date(a.receivedAt).getTime()), 0) / active.length / 3600_000 : 0;
+  const stats7 = useMemo(() => computeStats(state, { days: 14, now }), [state, now]);
+  const todayTk = tickets.filter((t) => isToday(t.createdAt, now));
+  const todayPushed = todayTk.filter((t) => t.loggedAt).length;
+  const todayOrders = todayTk.filter((t) => t.orderNumber);
+  const todayUnix = todayOrders.filter((t) => t.unixLoggedAt).length;
+  const needsUnix = tickets.filter((t) => t.orderNumber && !t.unixLoggedAt && t.status !== 'converted').length;
 
   const loads = techLoad(state);
   const maxLoad = Math.max(1, ...loads.map((l) => l.assignments.length + l.tickets.length));
-
-  const series = useMemo(() => {
-    const items = [...tickets.map((t) => ({ at: t.createdAt })), ...live.map((a) => ({ at: a.receivedAt }))];
-    return dailySeries(items, 'at', 14, now);
-  }, [tickets, live, now]);
-  const total14 = series.reduce((s, d) => s + d.count, 0);
 
   const mix = useMemo(() => {
     const c = countBy([...tickets, ...live].filter((x) => x.serviceType), (x) => x.serviceType);
@@ -79,25 +80,75 @@ function Overview() {
   const checksRaw = state.checklist[today] || {};
   const checks = DEFAULT_CHECKLIST.map((_, i) => checkOn(checksRaw[i]));
   const checksDone = checks.filter(Boolean).length;
+  const speed = stats7.speed;
 
   return (
     <div className="stack" style={{ gap: 16 }}>
+      {/* ── Hero: goal + speed + quick actions ─────────────────────── */}
+      <section className="hero corners-neon">
+        <i className="corner tl" /><i className="corner tr" /><i className="corner bl" /><i className="corner br" />
+        <div className="hero-main">
+          <div className="eyebrow">Today at the counter</div>
+          <div className="hero-numbers">
+            <div className="hero-num"><b>{goal?.today ?? 0}</b><span>customers<br />served</span></div>
+            <div className="hero-num"><b>{todayPushed}<small>/{todayTk.length}</small></b><span>pushed to<br />Salesforce</span></div>
+            <div className="hero-num"><b>{todayUnix}<small>/{todayOrders.length}</small></b><span>orders in<br />UNIX</span></div>
+            <div className="hero-num"><b>{speed.samples ? `${speed.avgLogSeconds.toFixed(1)}s` : '—'}</b><span>avg time<br />to log</span></div>
+          </div>
+          <div className="row wrap" style={{ gap: 8, marginTop: 14 }}>
+            <Btn variant="primary" icon="zap" onClick={() => newTicket()}>Quick log</Btn>
+            <Btn icon="plus" onClick={() => newAssignment()}>Check in device</Btn>
+            <Btn variant="ghost" icon="handoff" onClick={() => goTo('station')}>Shift handoff</Btn>
+            {needsUnix > 0 && <Chip tone="amber" icon="hash" onClick={() => goTo('salesforce')}>{needsUnix} order{needsUnix > 1 ? 's' : ''} not in UNIX</Chip>}
+            {!state.settings.currentTech && <Chip tone="amber" icon="alert-circle">No tech selected — pick yours</Chip>}
+            {state.settings.demoLoaded && <Chip tone="violet" icon="sparkles">Demo data loaded</Chip>}
+            {sync.status === 'idle' && sync.live && <Chip tone="green" icon="zap">Live board</Chip>}
+          </div>
+        </div>
+        <div className="hero-goal" onClick={() => goTo('stats')} role="button" tabIndex={0} title="Open Stats">
+          <Ring value={goal?.pct || 0} size={118} stroke={9} color={goal?.pct >= 1 ? 'var(--green)' : goal?.onPace ? 'var(--accent)' : 'var(--amber)'} label={goal?.today ?? 0} sub={`OF ${goal?.perDay ?? 20}`} />
+          <div className="hero-goal-text">
+            <div className="hero-goal-title">Daily goal</div>
+            <div className="hero-goal-sub">{goal?.pct >= 1 ? 'Reached — keep it rolling' : goal?.onPace ? `On pace · ${goal.remaining} to go` : `${goal?.remaining} to go · ~${goal?.expected} expected by now`}</div>
+            <div className="hero-goal-streak">{stats7.goal.streak > 0 ? `${stats7.goal.streak}-day streak` : `${stats7.goal.hitDays}/${Math.max(1, stats7.daily.length - 1)} days hit this fortnight`}</div>
+          </div>
+        </div>
+      </section>
+
       {/* ── KPI row ─────────────────────────────────────────────────── */}
       <div className="grid cols-5">
-        <KPI label="Open SF tickets" value={openTickets.length} icon="cloud" onClick={() => goTo('salesforce')} delta={<span>{tickets.filter((t) => t.loggedAt && isToday(t.loggedAt, now)).length} pushed today</span>} />
+        <KPI label="Open tickets" value={openTickets.length} icon="zap" onClick={() => goTo('salesforce')} delta={<span>{todayPushed} pushed today</span>} />
         <KPI label="In house" value={active.length} icon="clipboard" tone="violet" onClick={() => goTo('assignments')} delta={<span>avg hold {avgHold >= 24 ? `${(avgHold / 24).toFixed(1)}d` : `${Math.round(avgHold)}h`}</span>} />
         <KPI label={`Over ${th} days`} value={overdue.length} icon="alert-triangle" tone={overdue.length ? 'red' : 'green'} onClick={() => goTo('assignments')} delta={<span>{overdue.length ? <><span className="dot is-bad" /> needs attention</> : <><span className="dot is-live" /> all within limit</>}</span>} />
         <KPI label="Ready for pickup" value={ready.length} icon="check-circle" tone="green" onClick={() => goTo('assignments')} delta={<span>{ready.filter((a) => a.readyAt && (now - new Date(a.readyAt)) > 86_400_000).length} waiting 1d+</span>} />
-        <KPI label="Closed today" value={doneToday} icon="zap" tone="amber" delta={<span>pickups + SF pushes</span>} />
+        <KPI label="Closed today" value={doneToday} icon="check" tone="amber" onClick={() => goTo('stats')} delta={<span>pickups + SF pushes</span>} />
       </div>
 
-      {/* ── Quick actions ───────────────────────────────────────────── */}
-      <div className="row wrap" style={{ gap: 8 }}>
-        <Btn variant="primary" icon="plus" onClick={() => newAssignment()}>Check in device</Btn>
-        <Btn icon="cloud" onClick={() => newTicket()}>Log Salesforce ticket</Btn>
-        <Btn variant="ghost" icon="handoff" onClick={() => goTo('station')}>Shift handoff</Btn>
-        {!state.settings.currentTech && <Chip tone="amber" icon="alert-circle">No tech selected — pick yours in Settings</Chip>}
-        {state.settings.demoLoaded && <Chip tone="violet" icon="sparkles">Demo data loaded</Chip>}
+      <div className="grid cols-3">
+        {/* ── Intake (hoverable) ─────────────────────────────────────── */}
+        <Panel className="span-2" title="Intake · last 14 days" icon="activity" sub="Hover any day for the exact count — tickets, drop-offs and orders" corners
+          actions={<><Chip size="sm" icon="calendar">{stats7.daily[stats7.daily.length - 1]?.total ?? 0} today</Chip><Btn size="sm" variant="ghost" iconRight="arrow-right" onClick={() => goTo('stats')}>All stats</Btn></>}>
+          <HoverChart series={stats7.daily} goal={goal?.perDay} height={190} onPick={() => goTo('stats')} />
+          <div className="row wrap" style={{ gap: 14, marginTop: 8, fontSize: 11.5, color: 'var(--text-3)' }}>
+            <span className="row" style={{ gap: 6 }}><i className="legend-swatch" style={{ background: 'var(--accent)' }} />tickets</span>
+            <span className="row" style={{ gap: 6 }}><i className="legend-swatch" style={{ background: 'var(--violet)' }} />drop-offs</span>
+            <span className="row" style={{ gap: 6 }}><i className="legend-swatch" style={{ background: 'transparent', borderTop: '2px dashed var(--green)', height: 0 }} />goal {goal?.perDay}</span>
+            <span className="grow" />
+            <span>{stats7.totals.customers} this fortnight · best {stats7.goal.best?.total ?? 0}</span>
+          </div>
+        </Panel>
+
+        {/* ── Shift checklist ──────────────────────────────────────── */}
+        <Panel title="Today’s checklist" icon="check-circle" sub={`${checksDone}/${DEFAULT_CHECKLIST.length} done`} actions={<div className="progress" style={{ width: 80 }}><i style={{ width: `${(checksDone / DEFAULT_CHECKLIST.length) * 100}%` }} /></div>}>
+          <div className="checklist">
+            {DEFAULT_CHECKLIST.map((item, i) => (
+              <button key={i} className={`task ${checks[i] ? 'is-done' : ''}`} onClick={() => api.toggleCheck(i)} style={{ textAlign: 'left' }}>
+                <span className={`checkbox ${checks[i] ? 'is-on' : ''}`}><Icon name="check" size={11} /></span>
+                <span className="task-title">{item}</span>
+              </button>
+            ))}
+          </div>
+        </Panel>
       </div>
 
       <div className="grid cols-3">
@@ -127,29 +178,22 @@ function Overview() {
           )}
         </Panel>
 
-        {/* ── Shift checklist ──────────────────────────────────────── */}
-        <Panel title="Today’s checklist" icon="check-circle" sub={`${checksDone}/${DEFAULT_CHECKLIST.length} done`} actions={<div className="progress" style={{ width: 80 }}><i style={{ width: `${(checksDone / DEFAULT_CHECKLIST.length) * 100}%` }} /></div>}>
-          <div className="checklist">
-            {DEFAULT_CHECKLIST.map((item, i) => (
-              <button key={i} className={`task ${checks[i] ? 'is-done' : ''}`} onClick={() => api.toggleCheck(i)} style={{ textAlign: 'left' }}>
-                <span className={`checkbox ${checks[i] ? 'is-on' : ''}`}><Icon name="check" size={11} /></span>
-                <span className="task-title">{item}</span>
-              </button>
-            ))}
-          </div>
+        {/* ── Pipeline donut ───────────────────────────────────────── */}
+        <Panel title="Pipeline" icon="layers" sub="Active assignments by stage">
+          {active.length ? <Donut parts={pipeline} centerLabel={active.length} centerSub="IN HOUSE" /> : <EmptyState icon="clipboard" title="Nothing in house" desc="Check in a device and the pipeline lights up." />}
         </Panel>
       </div>
 
       <div className="grid cols-3">
         {/* ── Tech board ──────────────────────────────────────────── */}
         <Panel className="span-2" title="Who has what" icon="users" sub="Live load per tech — click a job to open it">
-          <div className="techboard">
+          <div className="techboard" style={{ gridTemplateColumns: `repeat(${Math.min(4, Math.max(1, loads.length))}, minmax(0, 1fr))` }}>
             {loads.map(({ tech, assignments, tickets: tk }) => {
               const load = assignments.length + tk.length;
               return (
                 <div key={tech.id} className="techcol" style={{ '--c': tech.color }}>
                   <div className="techcol-head">
-                    <div className="row"><Avatar tech={tech} /><div><div style={{ fontWeight: 700 }}>{tech.name}</div><div className="faint mono" style={{ fontSize: 10.5, letterSpacing: '0.08em' }}>{assignments.length} IN HOUSE · {tk.length} SF OPEN</div></div></div>
+                    <div className="row"><Avatar tech={tech} /><div><div style={{ fontWeight: 700 }}>{tech.name}</div><div className="faint mono" style={{ fontSize: 10.5, letterSpacing: '0.08em' }}>{assignments.length} IN HOUSE · {tk.length} OPEN</div></div></div>
                     {state.settings.currentTech === tech.id && <Chip size="sm" tone="accent">you</Chip>}
                   </div>
                   <div className="techcol-load"><i style={{ width: `${(load / maxLoad) * 100}%` }} /></div>
@@ -167,21 +211,7 @@ function Overview() {
           </div>
         </Panel>
 
-        {/* ── Pipeline donut ───────────────────────────────────────── */}
-        <Panel title="Pipeline" icon="layers" sub="Active assignments by stage">
-          {active.length ? <Donut parts={pipeline} centerLabel={active.length} centerSub="IN HOUSE" /> : <EmptyState icon="clipboard" title="Nothing in house" desc="Check in a device and the pipeline lights up." />}
-        </Panel>
-      </div>
-
-      <div className="grid cols-3">
-        <Panel className="span-2" title="Intake · last 14 days" icon="activity" sub={`${total14} tickets + drop-offs`} actions={<Chip size="sm" icon="calendar">{series[series.length - 1].count} today</Chip>}>
-          <Sparkline series={series} height={72} />
-          <div className="row between mt-2 mono faint" style={{ fontSize: 10.5 }}>
-            <span>{series[0].date.toLocaleDateString([], { month: 'short', day: 'numeric' })}</span>
-            <span>{series[Math.floor(series.length / 2)].date.toLocaleDateString([], { month: 'short', day: 'numeric' })}</span>
-            <span>today</span>
-          </div>
-        </Panel>
+        {/* ── Service mix ──────────────────────────────────────────── */}
         <Panel title="Service mix" icon="filter" sub="What comes to the counter">
           {mix.length ? <BarList items={mix.slice(0, 6)} /> : <EmptyState icon="filter" title="No data yet" />}
         </Panel>
@@ -211,6 +241,15 @@ const ACTION_META = {
   'inventory.delete': ['trash', 'removed inventory', 'red'],
   'tech.switch': ['user', 'signed in', null],
   'data.demo': ['sparkles', 'loaded demo data', 'violet'],
+  'data.reset': ['alert-triangle', 'reset the board', 'red'],
+  'ticket.unix': ['hash', 'entered an order in UNIX', 'green'],
+  'team.add': ['users', 'added a tech', 'accent'],
+  'team.remove': ['users', 'removed a tech', 'red'],
+  'broadcast.post': ['bell', 'posted a team alert', 'amber'],
+  'broadcast.remove': ['bell', 'cleared a team alert', null],
+  'goal.set': ['star', 'changed the daily goal', 'accent'],
+  'management.update': ['shield', 'updated management settings', null],
+  'management.pin': ['lock', 'changed the manager PIN', 'amber'],
 };
 
 function Activity() {
@@ -227,7 +266,7 @@ function Activity() {
   return (
     <Panel title="Activity feed" icon="activity" sub={`${state.activity.length} events on record (last 400 kept)`}
       actions={<>
-        <Segmented value={filter} onChange={setFilter} options={[{ id: 'all', label: 'All' }, { id: 'assignment', label: 'Assignments' }, { id: 'ticket', label: 'Tickets' }, { id: 'inventory', label: 'Station' }]} />
+        <Segmented value={filter} onChange={setFilter} options={[{ id: 'all', label: 'All' }, { id: 'assignment', label: 'Assignments' }, { id: 'ticket', label: 'Tickets' }, { id: 'inventory', label: 'Station' }, { id: 'team', label: 'Team' }, { id: 'broadcast', label: 'Alerts' }]} />
         <Select value={tech} onChange={(e) => setTech(e.target.value)} style={{ width: 140 }}><option value="">Everyone</option>{TECHS.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}</Select>
       </>}>
       {items.length === 0 ? <EmptyState icon="activity" title="Quiet so far" desc="Every ticket, status change and note shows up here with who did it." /> : (

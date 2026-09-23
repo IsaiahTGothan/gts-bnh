@@ -1,6 +1,6 @@
 {
   "name": "gts-hub",
-  "version": "1.1.0",
+  "version": "3.0.0",
   "private": true,
   "description": "GTS Hub — work tracking for the B&H Guest Technical Services counter (Salesforce log, overnight assignments, alerts, catalog, station).",
   "scripts": {

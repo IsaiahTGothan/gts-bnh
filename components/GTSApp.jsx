@@ -7,15 +7,20 @@
 //  shortcuts. Tabs live in their own files.
 // ═══════════════════════════════════════════════════════════════════════════
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { APP_VERSION, ASG_STATUS_BY_ID, TABS, TECHS, TECH_BY_ID, isTerminal, serviceLabel, techName } from '../lib/constants';
+import { APP_MAJOR, APP_VERSION, ASG_STATUS_BY_ID, MOBILE_TABS, TABS, TECHS, TECH_BY_ID, TECH_COLORS, initialsOf, isTerminal, serviceLabel, syncTeam, techName } from '../lib/constants';
+import { goalInfo } from '../lib/stats';
+import { connectionsStatus } from '../lib/salesforce';
 import { buildDemoData, checkOn, defaultState, exportJSON, loadState, mergeStates, migrate, parseImport, saveState, sharedSignature } from '../lib/store';
 import { changePasscode, setupPasscode, syncCycle } from '../lib/sync';
 import { openLiveChannel } from '../lib/realtime';
 import { play } from '../lib/sounds';
 import { intakeTagHTML, printHTML } from '../lib/print';
-import { buildAlerts, dayKey, downloadText, greeting, matches, nextTag, nowISO, uid } from '../lib/utils';
-import { Avatar, Btn, Chip, ConfirmDialog, GTSLogo, GTSMark, Icon, Kbd, Modal, ZaysLogo } from './ui';
+import { buildAlerts, dayKey, downloadText, greeting, matches, nextTag, nowISO, relTime, uid } from '../lib/utils';
+import { UnixScanModal } from './UnixScan';
+import { Avatar, Btn, Chip, ConfirmDialog, GTSLogo, GTSMark, Icon, Kbd, Modal, Ring, ZaysLogo } from './ui';
 import HomeTab from './HomeTab';
+import StatsTab from './StatsTab';
+import ManagementTab from './ManagementTab';
 import SalesforceTab from './SalesforceTab';
 import AssignmentsTab from './AssignmentsTab';
 import CatalogTab from './CatalogTab';
@@ -88,19 +93,26 @@ function useGTSStore() {
         serviceType: data.serviceType || null, description: (data.description || '').trim(),
         tech: data.tech === undefined ? cur.settings.currentTech : data.tech,
         status: 'open', createdAt: ts, updatedAt: ts,
+        logSeconds: Number.isFinite(data.logSeconds) && data.logSeconds > 0 ? Math.round(data.logSeconds * 10) / 10 : null,
+        unixLoggedAt: null, unixBy: null,
       };
       mutate((p) => act({ ...p, tickets: [created, ...p.tickets] }, 'ticket.create', created.tag, created.orderNumber ? `Order ${created.orderNumber}` : created.customerName || serviceLabel(created.serviceType)));
       return created;
     },
     updateTicket: (id, patch) => mutate((p) => ({ ...p, tickets: p.tickets.map((t) => (t.id === id ? stamp(t, patch) : t)) })),
-    logTicket: (id) => mutate((p) => {
+    logTicket: (id, extra = {}) => mutate((p) => {
       const t = p.tickets.find((x) => x.id === id); if (!t) return p;
-      const next = { ...p, tickets: p.tickets.map((x) => (x.id === id ? stamp(x, { status: 'logged', loggedAt: nowISO(), loggedBy: p.settings.currentTech }) : x)) };
-      return act(next, 'ticket.logged', t.tag, 'Pushed to Salesforce');
+      const next = { ...p, tickets: p.tickets.map((x) => (x.id === id ? stamp(x, { status: 'logged', loggedAt: nowISO(), loggedBy: p.settings.currentTech, ...extra }) : x)) };
+      return act(next, 'ticket.logged', t.tag, extra.sfCaseNumber ? `Salesforce Case ${extra.sfCaseNumber}` : 'Pushed to Salesforce');
+    }),
+    unixTicket: (id, on = true) => mutate((p) => {
+      const t = p.tickets.find((x) => x.id === id); if (!t) return p;
+      const next = { ...p, tickets: p.tickets.map((x) => (x.id === id ? stamp(x, on ? { unixLoggedAt: nowISO(), unixBy: p.settings.currentTech } : { unixLoggedAt: null, unixBy: null }) : x)) };
+      return on ? act(next, 'ticket.unix', t.tag, t.orderNumber ? `Order ${t.orderNumber} entered in UNIX` : 'Entered in UNIX') : next;
     }),
     reopenTicket: (id) => mutate((p) => {
       const t = p.tickets.find((x) => x.id === id); if (!t) return p;
-      return act({ ...p, tickets: p.tickets.map((x) => (x.id === id ? stamp(x, { status: 'open', loggedAt: null, loggedBy: null }) : x)) }, 'ticket.reopen', t.tag, 'Reopened');
+      return act({ ...p, tickets: p.tickets.map((x) => (x.id === id ? stamp(x, { status: 'open', loggedAt: null, loggedBy: null, sfCaseNumber: null, sfCaseId: null, sfUrl: null }) : x)) }, 'ticket.reopen', t.tag, 'Reopened');
     }),
     deleteTicket: (id) => mutate((p) => {
       const t = p.tickets.find((x) => x.id === id); if (!t) return p;
@@ -200,22 +212,65 @@ function useGTSStore() {
       return { ...p, checklist: { ...p.checklist, [k]: day } };
     }),
 
+    // ── Team (V3: managed from the Management tab) ─────────────────────
+    addTech: ({ name, role = 'tech', color }) => {
+      const cur = stateRef.current;
+      const clean = String(name || '').trim();
+      if (!clean) return null;
+      const base = clean.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'tech';
+      let id = base; let n = 2;
+      while ((cur.team || []).some((t) => t.id === id && !t.deletedAt)) id = `${base}-${n++}`;
+      const existing = (cur.team || []).find((t) => t.id === id);
+      const ts = nowISO();
+      const used = new Set((cur.team || []).filter((t) => !t.deletedAt).map((t) => t.color));
+      const rec = { id, name: clean, initials: initialsOf(clean), color: color || TECH_COLORS.find((c) => !used.has(c)) || TECH_COLORS[(cur.team || []).length % TECH_COLORS.length], role, order: Math.max(-1, ...(cur.team || []).map((t) => t.order ?? 0)) + 1, createdAt: existing?.createdAt || ts, updatedAt: ts, deletedAt: null };
+      mutate((p) => act({ ...p, team: [...(p.team || []).filter((t) => t.id !== id), rec] }, 'team.add', rec.name, role === 'manager' ? 'Added as manager' : 'Added to the team'));
+      return rec;
+    },
+    updateTech: (id, patch) => mutate((p) => ({ ...p, team: (p.team || []).map((t) => (t.id === id ? stamp(t, { ...patch, ...(patch.name ? { initials: patch.initials || initialsOf(patch.name) } : {}) }) : t)) })),
+    removeTech: (id) => mutate((p) => {
+      const t = (p.team || []).find((x) => x.id === id); if (!t) return p;
+      const next = { ...p, team: p.team.map((x) => (x.id === id ? stamp(x, { deletedAt: nowISO() }) : x)), settings: p.settings.currentTech === id ? { ...p.settings, currentTech: null } : p.settings };
+      return act(next, 'team.remove', t.name, 'Removed from the team');
+    }),
+    restoreTech: (id) => mutate((p) => ({ ...p, team: (p.team || []).map((x) => (x.id === id ? stamp(x, { deletedAt: null }) : x)) })),
+
+    // ── Broadcasts (manager alerts on every screen) ────────────────────
+    postBroadcast: ({ text, tone = 'info', expiresAt = null }) => {
+      const cur = stateRef.current; const ts = nowISO();
+      const rec = { id: uid('bc'), text: String(text || '').trim(), tone, by: cur.settings.currentTech || null, createdAt: ts, updatedAt: ts, expiresAt: expiresAt || null, deletedAt: null };
+      if (!rec.text) return null;
+      mutate((p) => act({ ...p, broadcasts: [rec, ...(p.broadcasts || [])] }, 'broadcast.post', tone === 'critical' ? 'Urgent alert' : 'Team alert', rec.text.slice(0, 80)));
+      return rec;
+    },
+    removeBroadcast: (id) => mutate((p) => {
+      const b = (p.broadcasts || []).find((x) => x.id === id); if (!b) return p;
+      return act({ ...p, broadcasts: p.broadcasts.map((x) => (x.id === id ? stamp(x, { deletedAt: nowISO() }) : x)) }, 'broadcast.remove', 'Team alert', 'Cleared');
+    }),
+    dismissBroadcast: (id) => mutate((p) => ({ ...p, settings: { ...p.settings, dismissedBroadcasts: [...new Set([...(p.settings.dismissedBroadcasts || []), id])].slice(-50) } })),
+
+    // ── Management doc (goal, PIN, connection prefs) ───────────────────
+    setManagement: (patch, note) => mutate((p) => {
+      const next = { ...p, management: { ...p.management, ...patch, updatedAt: nowISO() } };
+      return note ? act(next, note.action || 'management.update', note.label || 'Management', note.detail || '') : next;
+    }),
+
     // ── Data management ─────────────────────────────────────────────────
     loadDemo: () => mutate((p) => {
       const d = buildDemoData();
-      return act({ ...p, tickets: [...d.tickets, ...p.tickets], assignments: [...d.assignments, ...p.assignments], inventory: [...d.inventory, ...p.inventory], activity: [...d.activity, ...p.activity].slice(0, ACTIVITY_CAP), settings: { ...p.settings, demoLoaded: true } }, 'data.demo', 'Demo data', 'Synthetic records loaded');
+      return act({ ...p, tickets: [...d.tickets, ...p.tickets], assignments: [...d.assignments, ...p.assignments], inventory: [...d.inventory, ...p.inventory], broadcasts: [...(d.broadcasts || []), ...(p.broadcasts || [])], activity: [...d.activity, ...p.activity].slice(0, ACTIVITY_CAP), settings: { ...p.settings, demoLoaded: true } }, 'data.demo', 'Demo data', 'Synthetic records loaded');
     }),
     // Demo / reset use tombstones (not hard deletes) so the removal also
     // reaches the other devices when team sync is on.
     clearDemo: () => mutate((p) => {
       const ts = nowISO();
       const gone = (x) => (x.demo && !x.deletedAt ? { ...x, deletedAt: ts, updatedAt: ts } : x);
-      return { ...p, tickets: p.tickets.map(gone), assignments: p.assignments.map(gone), inventory: p.inventory.map(gone), activity: p.activity.filter((x) => !x.demo), settings: { ...p.settings, demoLoaded: false } };
+      return { ...p, tickets: p.tickets.map(gone), assignments: p.assignments.map(gone), inventory: p.inventory.map(gone), broadcasts: (p.broadcasts || []).map(gone), activity: p.activity.filter((x) => !x.demo), settings: { ...p.settings, demoLoaded: false } };
     }),
     clearAll: () => mutate((p) => {
       const ts = nowISO();
       const gone = (x) => (x.deletedAt ? x : { ...x, deletedAt: ts, updatedAt: ts });
-      const next = { ...p, tickets: p.tickets.map(gone), assignments: p.assignments.map(gone), inventory: p.inventory.map(gone), activity: [], checklist: {}, settings: { ...p.settings, demoLoaded: false } };
+      const next = { ...p, tickets: p.tickets.map(gone), assignments: p.assignments.map(gone), inventory: p.inventory.map(gone), broadcasts: (p.broadcasts || []).map(gone), activity: [], checklist: {}, settings: { ...p.settings, demoLoaded: false } };
       return act(next, 'data.reset', 'Board reset', 'All records deleted');
     }),
     importState: (text) => {
@@ -404,6 +459,20 @@ function useTeamSync(state, api, toast) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+//  CONNECTIONS (Salesforce connector status — fetched once, refreshable)
+// ═══════════════════════════════════════════════════════════════════════════
+function useConnections() {
+  const [conn, setConn] = useState({ loaded: false, salesforce: { configured: false }, unix: { mode: 'scan', bridge: false } });
+  const refresh = useCallback(async () => {
+    const r = await connectionsStatus();
+    setConn({ loaded: true, salesforce: { configured: !!r.configured, host: r.host || null, missing: r.missing || [], apiVersion: r.apiVersion, error: r.error || null }, unix: r.unix || { mode: 'scan', bridge: false } });
+    return r;
+  }, []);
+  useEffect(() => { refresh(); }, [refresh]);
+  return { ...conn, refresh };
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 //  ROOT COMPONENT
 // ═══════════════════════════════════════════════════════════════════════════
 export default function GTSApp() {
@@ -418,6 +487,11 @@ export default function GTSApp() {
   const [toasts, setToasts] = useState([]);
   const [highlight, setHighlight] = useState(null); // { type, id }
 
+  // Keep the live tech registry in step with the shared roster (render-phase,
+  // idempotent — children must see the new team on this same render).
+  const teamRef = useRef(null);
+  if (state && state.team !== teamRef.current) { teamRef.current = state.team; syncTeam(state.team); }
+
   // ── toasts ───────────────────────────────────────────────────────────
   const toast = useCallback((message, { tone = 'info', action, duration = 4200 } = {}) => {
     const id = uid('to');
@@ -427,6 +501,7 @@ export default function GTSApp() {
   const dismissToast = (id) => setToasts((t) => t.filter((x) => x.id !== id));
 
   const sync = useTeamSync(state, api, toast);
+  const connections = useConnections();
 
   // ── boot splash (once per browser session) ───────────────────────────
   useEffect(() => {
@@ -436,7 +511,7 @@ export default function GTSApp() {
     const t = setTimeout(() => {
       setLeaving(true);
       setTimeout(() => { setBooting(false); try { sessionStorage.setItem('gts-booted', '1'); } catch { /* ignore */ } }, 420);
-    }, skip ? 120 : 1350);
+    }, skip ? 120 : 1500);
     return () => clearTimeout(t);
   }, [!!state]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -459,6 +534,7 @@ export default function GTSApp() {
   const newTicket = useCallback((prefill) => setModal({ type: 'ticket', props: { prefill } }), []);
   const confirm = useCallback((props) => setModal({ type: 'confirm', props }), []);
   const closeModal = useCallback(() => setModal(null), []);
+  const openUnixScan = useCallback((ticketId) => setModal({ type: 'unix', props: { ticketId } }), []);
 
   // ── keyboard shortcuts ───────────────────────────────────────────────
   useEffect(() => {
@@ -470,16 +546,18 @@ export default function GTSApp() {
       if (typing || meta || e.altKey) return;
       if (modal || drawerId || palette) return;
       const k = e.key;
-      if (k >= '1' && k <= '5') { goTo(TABS[Number(k) - 1].id); return; }
+      const byKey = TABS.find((t) => t.key === k);
+      if (byKey) { goTo(byKey.id, byKey.id === 'home' ? 'overview' : undefined); return; }
       if (k === 'n' || k === 'N') { e.preventDefault(); newAssignment(); return; }
       if (k === 't' || k === 'T') { e.preventDefault(); newTicket(); return; }
       if (k === '/') { e.preventDefault(); window.dispatchEvent(new CustomEvent('gts:focus-search')); return; }
       if (k === '?') { setModal({ type: 'shortcuts' }); return; }
-      if (k === 'h' || k === 'H') { goTo('home'); return; }
+      if (k === 'h' || k === 'H') { goTo('home', 'overview'); return; }
+      if (k === '[') { api.setSettings({ railCollapsed: !state?.settings.railCollapsed }); return; }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [modal, drawerId, palette, goTo, newAssignment, newTicket]);
+  }, [modal, drawerId, palette, goTo, newAssignment, newTicket, api, state?.settings.railCollapsed]);
 
   // ── derived counts for nav badges ────────────────────────────────────
   const counts = useMemo(() => {
@@ -488,45 +566,56 @@ export default function GTSApp() {
     return {
       alerts: alerts.filter((a) => a.severity === 'critical').length,
       openTickets: state.tickets.filter((t) => !t.deletedAt && t.status === 'open').length,
+      needsUnix: state.tickets.filter((t) => !t.deletedAt && t.orderNumber && !t.unixLoggedAt && t.status !== 'converted').length,
       activeAsg: state.assignments.filter((a) => !a.deletedAt && !isTerminal(a.status)).length,
       outItems: state.inventory.filter((i) => !i.deletedAt && i.status === 'checked_out').length,
+      broadcasts: activeBroadcasts(state, now).length,
     };
   }, [state, now]);
 
+  const goal = useMemo(() => (state ? goalInfo(state, now) : null), [state, now]);
+  const isManager = !!state && (state.management?.pinHash ? !!state.settings.managerUnlocked : true);
+
   const ctx = useMemo(() => ({
-    state, api, now, toast, sfx, sync,
+    state, api, now, toast, sfx, sync, connections, goal, isManager,
     tab, goTo, homeTab, setHomeTab,
-    openAssignment, openTicket, openInventory, openRef, newAssignment, newTicket, confirm, highlight,
+    openAssignment, openTicket, openInventory, openRef, newAssignment, newTicket, confirm, highlight, openUnixScan,
     openPalette: () => setPalette(true), openShortcuts: () => setModal({ type: 'shortcuts' }), openAbout: () => setModal({ type: 'about' }),
+    openWhatsNew: () => setModal({ type: 'whatsnew' }), openTechPicker: () => setModal({ type: 'tech' }), openMore: () => setModal({ type: 'more' }),
     counts,
-  }), [state, api, now, toast, sfx, sync, tab, goTo, homeTab, openAssignment, openTicket, openInventory, openRef, newAssignment, newTicket, confirm, highlight, counts]);
+  }), [state, api, now, toast, sfx, sync, connections, goal, isManager, tab, goTo, homeTab, openAssignment, openTicket, openInventory, openRef, newAssignment, newTicket, confirm, highlight, openUnixScan, counts]);
 
   // ── server / pre-hydration render ────────────────────────────────────
   if (!state || booting) return <BootSplash leaving={leaving} />;
 
   const drawerAsg = drawerId ? state.assignments.find((a) => a.id === drawerId) : null;
   const tech = TECH_BY_ID[state.settings.currentTech];
+  const showWhatsNew = state.settings.onboarded && (state.settings.whatsNewSeen || 0) < APP_MAJOR && !modal;
 
   return (
     <StoreContext.Provider value={ctx}>
       <div className="bg-layer bg-grid" />
       <div className="bg-layer bg-glow" />
-      <div className="app">
-        <TopBar tech={tech} onPickTech={() => setModal({ type: 'tech' })} />
-
-        <main className="main" key={tab}>
-          <div className="tabpane">
-            {tab === 'home' && <HomeTab />}
-            {tab === 'salesforce' && <SalesforceTab />}
-            {tab === 'assignments' && <AssignmentsTab />}
-            {tab === 'catalog' && <CatalogTab />}
-            {tab === 'station' && <StationTab />}
-          </div>
-        </main>
-
-        <Footer />
-        <MobileNav />
+      <div className={`app app-v3 ${state.settings.railCollapsed ? 'is-collapsed' : ''}`}>
+        <Rail tech={tech} />
+        <div className="app-main">
+          <Strip tech={tech} />
+          <BroadcastBar />
+          <main className="main" key={tab}>
+            <div className="tabpane">
+              {tab === 'home' && <HomeTab />}
+              {tab === 'salesforce' && <SalesforceTab />}
+              {tab === 'assignments' && <AssignmentsTab />}
+              {tab === 'stats' && <StatsTab />}
+              {tab === 'catalog' && <CatalogTab />}
+              {tab === 'station' && <StationTab />}
+              {tab === 'management' && <ManagementTab />}
+            </div>
+          </main>
+          <Footer />
+        </div>
       </div>
+      <MobileNav />
 
       {/* ── overlays ─────────────────────────────────────────────────── */}
       {drawerAsg && !drawerAsg.deletedAt && <AssignmentDrawer asg={drawerAsg} onClose={() => { setDrawerId(null); sfx('close'); }} />}
@@ -546,13 +635,17 @@ export default function GTSApp() {
       )}
       {modal?.type === 'ticket' && (
         <TicketForm prefill={modal.props?.prefill} onClose={closeModal}
-          onSave={(data) => { const t = api.addTicket(data); closeModal(); sfx('success'); toast(`${t.tag} added to the Salesforce log`, { tone: 'success' }); setTab('salesforce'); }} />
+          onSave={(data) => { const t = api.addTicket(data); closeModal(); sfx('success'); toast(`${t.tag} logged${t.logSeconds ? ` in ${t.logSeconds}s` : ''}`, { tone: 'success' }); setTab('salesforce'); }} />
       )}
       {modal?.type === 'confirm' && <ConfirmDialog {...modal.props} onClose={closeModal} />}
       {modal?.type === 'tech' && <TechPickerModal onClose={closeModal} />}
       {modal?.type === 'shortcuts' && <ShortcutsModal onClose={closeModal} />}
       {modal?.type === 'about' && <AboutModal onClose={closeModal} />}
+      {modal?.type === 'whatsnew' && <WhatsNewModal onClose={closeModal} />}
+      {modal?.type === 'more' && <MoreSheet onClose={closeModal} />}
+      {modal?.type === 'unix' && <UnixScanModal ticketId={modal.props?.ticketId} onClose={closeModal} />}
       {!state.settings.onboarded && !modal && !booting && <TechPickerModal onClose={() => api.setSettings({ onboarded: true })} first />}
+      {showWhatsNew && <WhatsNewModal onClose={() => api.setSettings({ whatsNewSeen: APP_MAJOR })} first />}
 
       {palette && <CommandPalette onClose={() => setPalette(false)} />}
       <ToastHost toasts={toasts} onDismiss={dismissToast} />
@@ -560,8 +653,16 @@ export default function GTSApp() {
   );
 }
 
+/** Broadcasts that should be on screen right now (not expired, not cleared, not dismissed here). */
+export function activeBroadcasts(state, now = Date.now()) {
+  const dismissed = new Set(state.settings?.dismissedBroadcasts || []);
+  return (state.broadcasts || [])
+    .filter((b) => !b.deletedAt && (!b.expiresAt || new Date(b.expiresAt).getTime() > now) && !(b.tone !== 'critical' && dismissed.has(b.id)))
+    .sort((a, b) => (a.tone === 'critical' ? 0 : 1) - (b.tone === 'critical' ? 0 : 1) || new Date(b.createdAt) - new Date(a.createdAt));
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
-//  SHELL PIECES
+//  SHELL PIECES (V3: sidebar rail + command strip + broadcast bar)
 // ═══════════════════════════════════════════════════════════════════════════
 function BootSplash({ leaving }) {
   return (
@@ -570,13 +671,13 @@ function BootSplash({ leaving }) {
         <GTSMark size={84} />
         <div style={{ textAlign: 'center' }}>
           <div className="brand-name" style={{ fontSize: 18, letterSpacing: '0.06em' }}>GUEST TECHNICAL SERVICES</div>
-          <div className="brand-sub" style={{ marginTop: 6 }}>GTS HUB · v{APP_VERSION}</div>
+          <div className="brand-sub" style={{ marginTop: 6 }}>GTS HUB · <span className="boot-v3">V3</span> · BUILT FOR SPEED</div>
         </div>
         <div className="boot-bar"><i /></div>
         <div className="boot-lines">
-          <span>▸ loading station memory</span>
-          <span>▸ calculating hold times</span>
-          <span>▸ building alerts</span>
+          <span>▸ loading the shared board</span>
+          <span>▸ counting today’s customers</span>
+          <span>▸ arming alerts + live channel</span>
           <span>● systems online</span>
         </div>
       </div>
@@ -584,67 +685,142 @@ function BootSplash({ leaving }) {
   );
 }
 
-function Clock() {
+function Clock({ compact }) {
   const [t, setT] = useState(() => new Date());
   useEffect(() => { const iv = setInterval(() => setT(new Date()), 1000); return () => clearInterval(iv); }, []);
   return (
-    <div className="clock hidden-mobile">
-      <div className="clock-time">{t.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</div>
-      <div className="clock-date">{t.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })}</div>
+    <div className={`clock ${compact ? 'is-compact' : ''}`}>
+      <div className="clock-time">{t.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: compact ? undefined : '2-digit' })}</div>
+      {!compact && <div className="clock-date">{t.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })}</div>}
     </div>
   );
 }
 
-function TopBar({ tech, onPickTech }) {
-  const { tab, goTo, counts, openPalette, sync } = useStore();
-  const tabsRef = useRef(null);
-  const [ind, setInd] = useState({ left: 0, width: 0 });
-  useEffect(() => {
-    const el = tabsRef.current?.querySelector(`[data-tab="${tab}"]`);
-    if (el) setInd({ left: el.offsetLeft, width: el.offsetWidth });
-  }, [tab]);
-  useEffect(() => {
-    const onResize = () => { const el = tabsRef.current?.querySelector(`[data-tab="${tab}"]`); if (el) setInd({ left: el.offsetLeft, width: el.offsetWidth }); };
-    window.addEventListener('resize', onResize); return () => window.removeEventListener('resize', onResize);
-  }, [tab]);
-
-  const badge = (id) => (id === 'home' && counts.alerts) || (id === 'salesforce' && counts.openTickets) || (id === 'assignments' && counts.activeAsg) || (id === 'station' && counts.outItems) || 0;
-
+function Rail({ tech }) {
+  const { state, api, tab, goTo, counts, sync, isManager, openTechPicker, openAbout } = useStore();
+  const collapsed = !!state.settings.railCollapsed;
+  const badge = (id) => (id === 'home' && counts.alerts) || (id === 'salesforce' && counts.openTickets) || (id === 'assignments' && counts.activeAsg) || (id === 'station' && counts.outItems) || (id === 'management' && counts.broadcasts) || 0;
   return (
-    <header className="topbar">
-      <div className="topbar-inner">
-        <div onClick={() => goTo('home', 'overview')}><GTSLogo /></div>
-        <nav className="tabs" aria-label="Main">
-          <div className="tabs-inner" ref={tabsRef}>
-            <span className="tab-ind" style={{ left: ind.left, width: ind.width }} />
-            {TABS.map((t) => {
-              const n = badge(t.id);
-              return (
-                <button key={t.id} data-tab={t.id} className={`tab ${tab === t.id ? 'is-active' : ''}`} onClick={() => goTo(t.id, t.id === 'home' ? 'overview' : undefined)}>
-                  <Icon name={t.icon} size={16} />{t.label}
-                  {n > 0 && <span className={`badge ${t.id === 'home' ? '' : 'is-neutral'}`}>{n}</span>}
-                </button>
-              );
-            })}
-          </div>
-        </nav>
-        <div className="topbar-right">
-          <SyncDot sync={sync} onClick={() => goTo('home', 'settings')} />
+    <aside className="rail" aria-label="Navigation">
+      <button className="rail-brand" onClick={() => goTo('home', 'overview')} title="GTS Hub V3 — Home">
+        <GTSMark size={40} />
+        <span className="rail-brand-text">
+          <span className="brand-name">GTS HUB</span>
+          <span className="brand-sub">V3 · B&amp;H GUEST TECH</span>
+        </span>
+      </button>
+      <nav className="rail-nav">
+        {TABS.map((t) => {
+          const n = badge(t.id);
+          const locked = t.manager && !isManager;
+          return (
+            <button key={t.id} className={`rail-item ${tab === t.id ? 'is-active' : ''} ${t.manager ? 'is-manager' : ''}`} onClick={() => goTo(t.id, t.id === 'home' ? 'overview' : undefined)} title={collapsed ? `${t.label} · ${t.key}` : t.hint}>
+              <span className="rail-icon"><Icon name={t.icon} size={18} /></span>
+              <span className="rail-label">{t.label}</span>
+              {n > 0 && <span className={`badge ${t.id === 'home' ? '' : t.id === 'management' ? 'is-accent' : 'is-neutral'}`}>{n}</span>}
+              {locked && n === 0 && <Icon name="lock" size={12} className="rail-lock" />}
+              <span className="rail-key">{t.key}</span>
+            </button>
+          );
+        })}
+      </nav>
+      <div className="rail-foot">
+        <SyncDot sync={sync} onClick={() => goTo('home', 'settings')} rail />
+        <button className={`railtech ${tech ? '' : 'is-empty'}`} onClick={openTechPicker} title="Switch tech">
+          <Avatar tech={tech} />
+          <span className="railtech-text">
+            <span className="techchip-name">{tech ? tech.name : 'Pick tech'}</span>
+            <span className="techchip-role">{tech ? (tech.role === 'manager' ? 'Manager' : 'Technician') : 'Not signed in'}</span>
+          </span>
+          <Icon name="chevron-right" size={14} style={{ color: 'var(--text-3)' }} />
+        </button>
+        <div className="rail-tools">
+          <button className="rail-mini" onClick={() => api.setSettings({ railCollapsed: !collapsed })} title={collapsed ? 'Expand sidebar  [' : 'Collapse sidebar  ['}><Icon name={collapsed ? 'chevron-right' : 'chevron-left'} size={14} /></button>
+          <button className="rail-mini rail-version" onClick={openAbout} title="About GTS Hub">v{APP_VERSION}</button>
+        </div>
+      </div>
+    </aside>
+  );
+}
+
+function GoalRing({ size = 44, compact }) {
+  const { goal, goTo } = useStore();
+  if (!goal) return null;
+  const hidden = goal.emphasis === 'off';
+  if (hidden) return null;
+  const tone = goal.pct >= 1 ? 'var(--green)' : goal.onPace ? 'var(--accent)' : 'var(--amber)';
+  return (
+    <button className={`goalpill ${goal.emphasis === 'bold' ? 'is-bold' : ''}`} onClick={() => goTo('stats')} title={`${goal.today} of ${goal.perDay} ${goal.label} today · ${goal.pct >= 1 ? 'goal reached' : goal.onPace ? 'on pace' : `expected ~${goal.expected} by now`}`}>
+      <Ring value={goal.pct} size={size} stroke={5} color={tone} label={goal.pct >= 1 ? '✓' : goal.today} />
+      {!compact && (
+        <span className="goalpill-text">
+          <span className="goalpill-main"><b>{goal.today}</b> / {goal.perDay}</span>
+          <span className="goalpill-sub">{goal.pct >= 1 ? 'DAILY GOAL HIT' : goal.onPace ? 'ON PACE · TODAY' : `${goal.remaining} TO GO`}</span>
+        </span>
+      )}
+    </button>
+  );
+}
+
+function Strip({ tech }) {
+  const { tab, goTo, openPalette, newTicket, counts, sync, openTechPicker, openMore } = useStore();
+  const t = TABS.find((x) => x.id === tab) || TABS[0];
+  const others = onlineOthers(sync);
+  return (
+    <header className="strip">
+      <div className="strip-inner">
+        <button className="strip-brand hidden-desktop" onClick={() => goTo('home', 'overview')}><GTSMark size={32} /></button>
+        <div className="strip-title hidden-mobile">
+          <div className="eyebrow">{t.hint}</div>
+          <div className="strip-h">{t.label}</div>
+        </div>
+        <div className="strip-center">
+          <GoalRing />
+          {others.length > 0 && (
+            <span className="strip-presence hidden-mobile" title={`${others.map((o) => techName(o.tech)).join(', ')} online`}>
+              {others.slice(0, 4).map((o, i) => <Avatar key={o.tech || i} tech={o.tech} size="sm" />)}
+              <span className="faint mono" style={{ fontSize: 10.5, letterSpacing: '0.08em' }}>{others.length} ONLINE</span>
+            </span>
+          )}
+        </div>
+        <div className="strip-right">
           <Clock />
           <button className="searchbtn hidden-mobile" onClick={openPalette} title="Command palette (⌘K)"><Icon name="search" size={15} /><span>Search</span><Kbd>⌘K</Kbd></button>
-          <button className={`techchip ${tech ? '' : 'is-empty'}`} onClick={onPickTech} title="Switch tech">
-            <Avatar tech={tech} />
-            <span style={{ textAlign: 'left', lineHeight: 1.1 }}>
-              <div className="techchip-name">{tech ? tech.name : 'Pick tech'}</div>
-              <div className="techchip-role">{tech ? 'On counter' : 'Not signed in'}</div>
-            </span>
-            <Icon name="chevron-down" size={14} style={{ color: 'var(--text-3)' }} />
-          </button>
+          <Btn variant="primary" icon="zap" onClick={() => newTicket()} className="strip-cta" title="Quick log (T)"><span className="hidden-mobile">Quick log</span></Btn>
+          {counts.broadcasts > 0 && <button className="strip-bell hidden-mobile" onClick={() => goTo('management')} title={`${counts.broadcasts} team alert${counts.broadcasts > 1 ? 's' : ''} posted`}><Icon name="bell" size={16} /><span className="badge">{counts.broadcasts}</span></button>}
+          <button className="strip-avatar hidden-desktop" onClick={openTechPicker} title="Switch tech"><Avatar tech={tech} /></button>
+          <button className="strip-more hidden-desktop" onClick={openMore} title="More"><Icon name="dots" size={18} /></button>
         </div>
       </div>
     </header>
   );
 }
+
+const TONE_ICON = { info: 'bell', warning: 'alert-triangle', critical: 'alert-circle' };
+function BroadcastBar() {
+  const { state, api, now, isManager, confirm } = useStore();
+  const list = activeBroadcasts(state, now);
+  if (!list.length) return null;
+  return (
+    <div className="bcasts">
+      {list.slice(0, 3).map((b, i) => (
+        <div key={b.id} className={`bcast is-${b.tone} fade-up`} style={{ '--i': i }} role="status">
+          <span className="bcast-icon"><Icon name={TONE_ICON[b.tone] || 'bell'} /></span>
+          <div className="grow" style={{ minWidth: 0 }}>
+            <div className="bcast-text">{b.text}</div>
+            <div className="bcast-meta">{b.tone === 'critical' ? 'URGENT · ' : ''}{techName(b.by) === 'Unassigned' ? 'Management' : techName(b.by)} · {relTimeSafe(b.createdAt, now)}{b.expiresAt ? ` · until ${new Date(b.expiresAt).toLocaleDateString([], { month: 'short', day: 'numeric' })}` : ''}</div>
+          </div>
+          <div className="row" style={{ gap: 4 }}>
+            {isManager && <Btn size="xs" variant="ghost" icon="trash" title="Clear for everyone" onClick={() => confirm({ title: 'Clear this alert for everyone?', message: b.text, confirmLabel: 'Clear', onConfirm: () => api.removeBroadcast(b.id) })} />}
+            {b.tone !== 'critical' && <Btn size="xs" variant="ghost" icon="x" title="Hide on this device" onClick={() => api.dismissBroadcast(b.id)} />}
+          </div>
+        </div>
+      ))}
+      {list.length > 3 && <div className="faint" style={{ fontSize: 11.5, padding: '0 4px' }}>+{list.length - 3} more in Management</div>}
+    </div>
+  );
+}
+function relTimeSafe(iso, now) { try { return relTime(iso, now); } catch { return ''; } }
 
 /** Other devices currently on the channel, one entry per tech (unknown techs collapse into one). */
 export function onlineOthers(sync) {
@@ -658,7 +834,7 @@ export function onlineOthers(sync) {
   return [...seen.values()];
 }
 
-function SyncDot({ sync, onClick }) {
+function SyncDot({ sync, onClick, rail }) {
   const others = onlineOthers(sync);
   const map = {
     idle: sync.live ? ['live', `Live — ${others.length ? `${others.map((o) => techName(o.tech) || 'Someone').join(', ')} online` : 'nobody else online right now'}`] : ['accent', 'Connected — polling (live channel reconnecting…)'],
@@ -672,7 +848,7 @@ function SyncDot({ sync, onClick }) {
   const [tone, title] = map[sync.status] || [null, ''];
   const label = sync.status === 'idle' ? (sync.live ? 'LIVE' : 'SYNC') : sync.status === 'error' ? 'SYNC!' : sync.status === 'setup' ? 'SETUP' : sync.status === 'locked' ? 'LOCKED' : sync.status === 'probing' ? '…' : sync.status === 'off' ? 'OFF' : 'LOCAL';
   return (
-    <button type="button" className={`syncdot hidden-mobile ${sync.busy ? 'is-busy' : ''}`} title={title} onClick={onClick}>
+    <button type="button" className={`syncdot ${rail ? 'is-rail' : 'hidden-mobile'} ${sync.busy ? 'is-busy' : ''}`} title={title} onClick={onClick}>
       <span className={`dot ${tone ? `is-${tone}` : ''}`} />
       <span className="syncdot-label">{label}</span>
       {sync.status === 'idle' && others.length > 0 && (
@@ -686,33 +862,36 @@ function SyncDot({ sync, onClick }) {
 }
 
 function MobileNav() {
-  const { tab, goTo, counts } = useStore();
+  const { tab, goTo, counts, openMore } = useStore();
   const badge = (id) => (id === 'home' && counts.alerts) || (id === 'salesforce' && counts.openTickets) || (id === 'assignments' && counts.activeAsg) || 0;
+  const items = TABS.filter((t) => MOBILE_TABS.includes(t.id));
+  const moreActive = !MOBILE_TABS.includes(tab);
   return (
     <nav className="mobilenav" aria-label="Main (mobile)">
       <div className="mobilenav-inner">
-        {TABS.map((t) => {
+        {items.map((t) => {
           const n = badge(t.id);
           return (
             <button key={t.id} className={`mtab ${tab === t.id ? 'is-active' : ''}`} onClick={() => goTo(t.id, t.id === 'home' ? 'overview' : undefined)}>
-              <Icon name={t.icon} size={20} />{t.label}
+              <Icon name={t.icon} size={20} />{t.id === 'salesforce' ? 'Log' : t.label}
               {n > 0 && <span className={`badge ${t.id === 'home' ? '' : 'is-neutral'}`}>{n}</span>}
             </button>
           );
         })}
+        <button className={`mtab ${moreActive ? 'is-active' : ''}`} onClick={openMore}><Icon name="grid" size={20} />More</button>
       </div>
     </nav>
   );
 }
 
 function Footer() {
-  const { state, openAbout, openShortcuts } = useStore();
+  const { state, openAbout, openShortcuts, openWhatsNew } = useStore();
   return (
     <footer className="footer">
       <div className="footer-inner">
         <div className="footer-brand">
           <GTSMark size={22} animated={false} />
-          <span>Guest Technical Services · {state.settings.storeLabel || 'B&H Photo Video'} · <button className="mono" style={{ color: 'var(--text-3)' }} onClick={openAbout}>GTS Hub v{APP_VERSION}</button></span>
+          <span>Guest Technical Services · {state.settings.storeLabel || 'B&H Photo Video'} · <button className="mono" style={{ color: 'var(--text-3)' }} onClick={openAbout}>GTS Hub v{APP_VERSION}</button> · <button className="mono" style={{ color: 'var(--accent)' }} onClick={openWhatsNew}>what’s new</button></span>
         </div>
         <div className="row" style={{ gap: 18 }}>
           <button className="mono hidden-mobile" style={{ color: 'var(--text-3)', fontSize: 11, letterSpacing: '0.08em' }} onClick={openShortcuts}>KEYBOARD <Kbd>?</Kbd></button>
@@ -730,7 +909,7 @@ function Footer() {
 //  GLOBAL MODALS
 // ═══════════════════════════════════════════════════════════════════════════
 function TechPickerModal({ onClose, first }) {
-  const { state, api, sfx, toast } = useStore();
+  const { state, api, sfx, toast, goTo } = useStore();
   const pick = (id) => {
     api.setTech(id); sfx('success'); onClose();
     toast(`${greeting()}, ${TECH_BY_ID[id].name} — new tickets will be assigned to you`, { tone: 'success' });
@@ -744,9 +923,68 @@ function TechPickerModal({ onClose, first }) {
             <Avatar tech={t} size="lg" />
             <span className="grow">
               <div className="techcard-name">{t.name}</div>
-              <div className="techcard-sub">GTS TECHNICIAN</div>
+              <div className="techcard-sub">{t.role === 'manager' ? 'GTS MANAGER' : 'GTS TECHNICIAN'}</div>
             </span>
             {state.settings.currentTech === t.id ? <Chip tone="accent" icon="check">Active</Chip> : <Icon name="chevron-right" style={{ color: 'var(--text-3)' }} />}
+          </button>
+        ))}
+        <button className="techcard is-add" onClick={() => { onClose(); goTo('management'); }}>
+          <span className="avatar is-empty avatar-lg">+</span>
+          <span className="grow"><div className="techcard-name">Add or remove techs</div><div className="techcard-sub">MANAGEMENT → TEAM</div></span>
+          <Icon name="chevron-right" style={{ color: 'var(--text-3)' }} />
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  WHAT'S NEW (V3) + MOBILE "MORE" SHEET
+// ═══════════════════════════════════════════════════════════════════════════
+const V3_HIGHLIGHTS = [
+  ['zap', 'Quick Log with a stopwatch', 'Every ticket shows how fast it was logged. Average is single-digit seconds — the number directors care about.'],
+  ['activity', 'Stats — every number on one page', 'Order # vs no order #, per-tech, per-type, busiest hours, hold times, goal history. All hoverable.'],
+  ['shield', 'Management tab', 'Add or remove techs, post alerts that appear on every screen, set the daily goal, connect Salesforce and UNIX.'],
+  ['hash', 'UNIX scan bridge', 'Push to UNIX shows the order number as a barcode. Scan it at the WYSE terminal — no retyping, no firewall problem.'],
+  ['cloud', 'Salesforce connector', 'When the Connected App is set up, Push to Salesforce creates the real Case and stores its number here.'],
+  ['grid', 'New command-center layout', 'Sidebar rail, live goal ring, presence, team alerts. Same colors, same neon — more room to work.'],
+];
+function WhatsNewModal({ onClose, first }) {
+  return (
+    <Modal title="GTS Hub V3" sub="Built for speed. Built to be shown to the directors." onClose={onClose} icon="sparkles" size="lg"
+      footer={<><span className="faint" style={{ fontSize: 12 }}>Keyboard: 1–7 switch tabs · T quick log · N check-in · [ sidebar</span><Btn variant="primary" icon="arrow-right" onClick={onClose} autoFocus>{first ? 'Let’s go' : 'Close'}</Btn></>}>
+      <div className="whatsnew">
+        {V3_HIGHLIGHTS.map(([icon, title, desc], i) => (
+          <div key={title} className="wn-item fade-up" style={{ '--i': i }}>
+            <span className="wn-icon"><Icon name={icon} /></span>
+            <div><div className="wn-title">{title}</div><div className="wn-desc">{desc}</div></div>
+          </div>
+        ))}
+      </div>
+    </Modal>
+  );
+}
+
+function MoreSheet({ onClose }) {
+  const { goTo, openShortcuts, openAbout, openWhatsNew, isManager, counts } = useStore();
+  const items = [
+    ...TABS.filter((t) => !MOBILE_TABS.includes(t.id)).map((t) => ({ icon: t.icon, label: t.label, hint: t.hint, run: () => goTo(t.id), badge: t.id === 'management' ? counts.broadcasts : 0, lock: t.manager && !isManager })),
+    { icon: 'settings', label: 'Settings', hint: 'Tech, sync, theme, backups', run: () => goTo('home', 'settings') },
+    { icon: 'activity', label: 'Activity', hint: 'Who did what', run: () => goTo('home', 'activity') },
+    { icon: 'sparkles', label: 'What’s new in V3', hint: 'Release notes', run: openWhatsNew },
+    { icon: 'keyboard', label: 'Keyboard shortcuts', hint: '', run: openShortcuts },
+    { icon: 'info', label: 'About', hint: `GTS Hub v${APP_VERSION}`, run: openAbout },
+  ];
+  return (
+    <Modal title="More" onClose={onClose} size="sm" icon="grid">
+      <div className="stack" style={{ gap: 6 }}>
+        {items.map((it) => (
+          <button key={it.label} className="more-item" onClick={() => { onClose(); it.run(); }}>
+            <span className="kpi-icon" style={{ '--c': 'var(--accent)' }}><Icon name={it.icon} /></span>
+            <span className="grow" style={{ textAlign: 'left' }}><div style={{ fontWeight: 600 }}>{it.label}</div>{it.hint && <div className="faint" style={{ fontSize: 12 }}>{it.hint}</div>}</span>
+            {it.badge > 0 && <span className="badge is-accent">{it.badge}</span>}
+            {it.lock && <Icon name="lock" size={14} style={{ color: 'var(--text-3)' }} />}
+            <Icon name="chevron-right" size={14} style={{ color: 'var(--text-3)' }} />
           </button>
         ))}
       </div>
@@ -758,9 +996,10 @@ function ShortcutsModal({ onClose }) {
   const rows = [
     ['⌘ K', 'Command palette — search tickets, assignments, inventory, actions'],
     ['N', 'New overnight assignment (intake)'],
-    ['T', 'New Salesforce ticket'],
+    ['T', 'Quick log a ticket'],
     ['/', 'Focus the search box on the current tab'],
-    ['1 – 5', 'Jump to Home · Salesforce · Assignments · Catalog · Station'],
+    ['1 – 7', 'Home · Quick Log · Assignments · Stats · Catalog · Station · Management'],
+    ['[', 'Collapse / expand the sidebar'],
     ['H', 'Home'],
     ['Esc', 'Close any panel'],
     ['?', 'This list'],
@@ -784,9 +1023,9 @@ function AboutModal({ onClose }) {
   const n = { t: state.tickets.filter((x) => !x.deletedAt).length, a: state.assignments.filter((x) => !x.deletedAt).length, i: state.inventory.filter((x) => !x.deletedAt).length };
   const storage = sync.status === 'idle' ? `Shared team board (${sync.live ? 'live' : 'polling'}, rev ${sync.rev}) · cached in this browser` : 'This browser';
   return (
-    <Modal title="GTS Hub" sub={`Version ${APP_VERSION} · Guest Technical Services operations console`} onClose={onClose} size="sm" icon="sparkles">
+    <Modal title="GTS Hub V3" sub={`Version ${APP_VERSION} · Guest Technical Services command center`} onClose={onClose} size="sm" icon="sparkles">
       <div className="stack" style={{ gap: 12 }}>
-        <div className="row" style={{ gap: 14 }}><GTSMark size={56} /><p className="muted" style={{ lineHeight: 1.6 }}>Salesforce quick-log, overnight assignment tracking with live hold timers, auto-criticality and overdue alerts, a 124-item service catalog, and station inventory — built for the B&amp;H GTS counter.</p></div>
+        <div className="row" style={{ gap: 14 }}><GTSMark size={56} /><p className="muted" style={{ lineHeight: 1.6 }}>Quick Log with a stopwatch, Salesforce + UNIX push, live team board, overnight assignments with hold timers and auto-criticality, stats, management alerts and a daily goal — built for the B&amp;H GTS counter.</p></div>
         <dl className="dl">
           <dt>Records</dt><dd>{n.t} tickets · {n.a} assignments · {n.i} inventory items</dd>
           <dt>Storage</dt><dd>{storage}{state.settings.demoLoaded ? ' · demo data loaded' : ''}. Export a backup from Settings.</dd>
@@ -801,7 +1040,7 @@ function AboutModal({ onClose }) {
 //  COMMAND PALETTE (⌘K)
 // ═══════════════════════════════════════════════════════════════════════════
 function CommandPalette({ onClose }) {
-  const { state, api, goTo, openAssignment, openTicket, openInventory, newAssignment, newTicket, toast, sfx } = useStore();
+  const { state, api, goTo, openAssignment, openTicket, openInventory, newAssignment, newTicket, toast, sfx, openWhatsNew } = useStore();
   const [q, setQ] = useState('');
   const [idx, setIdx] = useState(0);
   const inputRef = useRef(null);
@@ -811,9 +1050,12 @@ function CommandPalette({ onClose }) {
     const out = [];
     const cmd = (label, icon, run, hint) => out.push({ group: 'Actions', label, icon, run, hint });
     if (matches(q, 'new assignment intake overnight drop off check in')) cmd('New overnight assignment', 'plus', () => newAssignment(), 'N');
-    if (matches(q, 'new ticket salesforce log appointment')) cmd('New Salesforce ticket', 'cloud', () => newTicket(), 'T');
+    if (matches(q, 'new ticket salesforce log appointment quick')) cmd('Quick log a ticket', 'zap', () => newTicket(), 'T');
     for (const t of TABS) if (matches(q, `go ${t.label} tab`)) cmd(`Go to ${t.label}`, t.icon, () => goTo(t.id));
     if (matches(q, 'settings tech switch')) cmd('Open Settings', 'settings', () => goTo('home', 'settings'));
+    if (matches(q, 'stats numbers report goal')) cmd('Open Stats', 'activity', () => goTo('stats'));
+    if (matches(q, 'management alert broadcast team goal connections')) cmd('Open Management', 'shield', () => goTo('management'));
+    if (matches(q, 'whats new v3 release notes')) cmd('What’s new in V3', 'sparkles', () => openWhatsNew());
     if (matches(q, 'theme dark light toggle')) cmd(`Switch to ${state.settings.theme === 'dark' ? 'light' : 'dark'} theme`, state.settings.theme === 'dark' ? 'sun' : 'moon', () => api.setSettings({ theme: state.settings.theme === 'dark' ? 'light' : 'dark' }));
     for (const t of TECHS) if (matches(q, `sign in as ${t.name} tech switch`)) cmd(`Sign in as ${t.name}`, 'user', () => { api.setTech(t.id); toast(`Signed in as ${t.name}`, { tone: 'success' }); });
     if (matches(q, 'export backup json download')) cmd('Export backup (JSON)', 'download', () => downloadText(`gts-hub-backup-${dayKey()}.json`, api.exportJSON(), 'application/json'));
@@ -828,7 +1070,7 @@ function CommandPalette({ onClose }) {
       for (const t of state.tickets) {
         if (t.deletedAt) continue;
         if (matches(q, t.tag, t.orderNumber, t.customerName, t.description, serviceLabel(t.serviceType), techName(t.tech))) {
-          out.push({ group: 'Salesforce tickets', label: `${t.tag} · ${t.orderNumber ? `Order ${t.orderNumber}` : t.customerName || 'Blank ticket'}`, icon: 'cloud', hint: t.status, sub: t.description?.slice(0, 80), run: () => openTicket(t.id) });
+          out.push({ group: 'Quick Log tickets', label: `${t.tag} · ${t.orderNumber ? `Order ${t.orderNumber}` : t.customerName || 'Blank ticket'}`, icon: 'zap', hint: `${t.status}${t.unixLoggedAt ? ' · unix' : ''}`, sub: t.description?.slice(0, 80), run: () => openTicket(t.id) });
         }
       }
       for (const i of state.inventory) {
@@ -837,7 +1079,7 @@ function CommandPalette({ onClose }) {
       }
     }
     return out.slice(0, 40);
-  }, [q, state, api, goTo, openAssignment, openTicket, openInventory, newAssignment, newTicket, toast]);
+  }, [q, state, api, goTo, openAssignment, openTicket, openInventory, newAssignment, newTicket, toast, openWhatsNew]);
 
   useEffect(() => { setIdx(0); }, [q]);
 
