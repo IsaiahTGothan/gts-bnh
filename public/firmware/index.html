@@ -386,6 +386,8 @@ a.btn:hover, a.opt:hover { text-decoration: none; }
 .embed .hero { padding-top: 10px; }
 .embed .backdrop { background: var(--bg); }
 
+.tag.team { color: var(--accent); border-color: rgba(227,168,92,.4); background: rgba(227,168,92,.1); }
+
 </style>
 
 <div class="backdrop"><div class="blob b1"></div><div class="blob b2"></div><div class="blob b3"></div><div class="grain"></div></div>
@@ -944,19 +946,32 @@ a.btn:hover, a.opt:hover { text-decoration: none; }
 
   // ------------------------------------------------------------------ search
   function norm(s) { return String(s || "").toLowerCase().replace(/ø/g, "o").replace(/[^a-z0-9.+/ ]+/g, " ").replace(/\s+/g, " ").trim(); }
+  // "Mark II" / "mk2" / "II" / "2" all mean the same generation: fold them to one spelling before matching.
+  function gen(s) {
+    return String(s || "").toLowerCase()
+      .replace(/\b(mark|mk)\s*/g, "")
+      .replace(/\b(iii|3)\b/g, "3").replace(/\b(ii|2)\b/g, "2").replace(/\b(iv|4)\b/g, "4")
+      .replace(/([a-z])(ii|iii|iv)\b/g, function (m, a, r) { return a + ({ ii: "2", iii: "3", iv: "4" })[r]; })
+      .replace(/([a-z0-9])(ii|iii|iv)$/g, function (m, a, r) { return a + ({ ii: "2", iii: "3", iv: "4" })[r]; });
+  }
+  function compactGen(s) { return compact(gen(s)); }
   function compact(s) { return norm(s).replace(/[^a-z0-9]/g, ""); }
   function index(it) {
     var hay = [it.brand, it.model, it.fullName, (it.aliases || []).join(" "), (it.tags || []).join(" "), it.category].join(" ");
-    it._compact = compact(hay);
+    it._compact = compact(hay) + " " + compactGen(hay);
     it._model = compact(it.brand + " " + it.model);
     it._modelOnly = compact(it.model);
-    it._aliases = (it.aliases || []).map(compact);
+    it._modelGen = compactGen(it.brand + " " + it.model);
+    it._modelOnlyGen = compactGen(it.model);
+    it._aliases = (it.aliases || []).map(compact).concat((it.aliases || []).map(compactGen));
   }
   function fuzzyIn(t, hay) { if (t.length < 4) return false; for (var i = 0; i < t.length; i++) if (hay.indexOf(t.slice(0, i) + t.slice(i + 1)) >= 0) return true; return false; }
   function score(it, q) {
     var qc = compact(q); if (!qc) return 1;
+    var qg = compactGen(q);
     var s = 0;
-    if (qc === it._model || qc === it._modelOnly) s += 1000;
+    if (qc === it._model || qc === it._modelOnly || qg === it._modelGen || qg === it._modelOnlyGen) s += 1000;
+    else if (qg && (it._modelGen.indexOf(qg) >= 0 || it._modelOnlyGen.indexOf(qg) === 0)) s += 300;
     if (it._aliases.indexOf(qc) >= 0) s += 900;
     if (it._model.indexOf(qc) === 0 || it._modelOnly.indexOf(qc) === 0) s += 400;
     if (it._model.indexOf(qc) >= 0) s += 250;
@@ -1044,6 +1059,43 @@ a.btn:hover, a.opt:hover { text-decoration: none; }
     if (m.query != null) { var q = $("#q"); q.value = m.query; state.q = m.query.trim(); $("#search").classList.toggle("has-text", !!state.q); renderGrid(); if (m.focus) q.focus(); }
     if (m.accent) document.documentElement.dataset.accent = m.accent;
   });
+  // Custom entries (added by the team in GTS Hub): same shape as catalog items, flagged with `custom`.
+  window.addEventListener("message", function (e) {
+    var m = e.data || {};
+    if (!m || m.type !== "cfh:custom" || !Array.isArray(m.items)) return;
+    state.items = state.items.filter(function (it) { return !it.custom; });
+    m.items.forEach(function (raw) {
+      var it = normalizeCustom(raw); if (!it) return;
+      index(it); state.items.push(it);
+    });
+    var counts = {}; state.items.forEach(function (i) { counts[i.category] = (counts[i.category] || 0) + 1; });
+    $$("[data-count]").forEach(function (p) { p.textContent = counts[p.dataset.count] || 0; });
+    if (CAT_VIEWS[state.view]) { renderBrandChips(); renderGrid(); }
+  });
+  function normalizeCustom(raw) {
+    if (!raw || !raw.model) return null;
+    var brand = (raw.brand || "Other").trim();
+    var files = [];
+    (raw.files || []).forEach(function (f) { if (f && f.url) files.push({ os: "any", type: guessType(f.name || f.url), url: f.url, filename: f.name || f.url.split("/").pop(), sizeMB: f.size ? Math.round(f.size / 104857.6) / 10 : undefined }); });
+    if (raw.link) files.push({ os: "any", type: guessType(raw.link, true), url: raw.link, filename: raw.linkLabel || raw.link.replace(/^https?:\/\//, "").slice(0, 60) });
+    var method = raw.method || (files.some(function (f) { return f.type === "installer"; }) ? "installer" : files.some(function (f) { return f.type === "cardfile"; }) ? "card" : "page");
+    return {
+      id: "team-" + (raw.id || compact(brand + raw.model)), custom: true, category: raw.category || "camera", brand: brand, model: raw.model.trim(),
+      fullName: raw.fullName || (brand + " " + raw.model.trim()), aliases: (raw.aliases || "").split(/[,;]/).map(function (a) { return a.trim(); }).filter(Boolean),
+      tags: ["team-added"].concat(raw.tags || []), released: raw.released || null, priceUSD: raw.priceUSD || null, summary: raw.notes || "",
+      specs: raw.addedBy ? { "Added by": raw.addedBy, "Added": (raw.createdAt || "").slice(0, 10) } : {},
+      brandColor: state.brandColors[brand] || "#d9a066",
+      firmware: { version: raw.version || null, date: raw.date || null, notes: raw.notes || "", page: raw.page || raw.link || (files[0] && files[0].url) || "",
+        downloads: files, method: method, updateApp: raw.updateApp || null, howTo: raw.howTo || "", checkUrl: raw.page || null, verified: (raw.createdAt || "").slice(0, 10) || null, confidence: "likely" }
+    };
+  }
+  function guessType(name, isLink) {
+    var n = String(name || "").toLowerCase().split("?")[0];
+    if (/\.(exe|msi|dmg|pkg)$/.test(n)) return "installer";
+    if (/\.(dat|fir|bin|lfu|fw|frm|upd|img|afu|plf|cim|swu|hex)$/.test(n)) return "cardfile";
+    if (/\.(zip|rar|7z)$/.test(n)) return "cardfile";
+    return isLink ? "page" : "cardfile";
+  }
   function route() {
     var h = (location.hash || "#camera").slice(1);
     if (h.indexOf("item/") === 0) { var id = h.slice(5); var it = state.items.filter(function (i) { return i.id === id; })[0]; if (it) { setView(it.category, false); openItem(it); return; } }
@@ -1496,7 +1548,11 @@ a.btn:hover, a.opt:hover { text-decoration: none; }
     var q = $("#q");
     function placeholder() { q.placeholder = window.innerWidth < 700 ? "Search cameras, lenses, flashes…" : "Search… a7 IV, R6 Mark II, Z8, X-T5, AD200 Pro, 24-70 GM"; }
     placeholder(); window.addEventListener("resize", placeholder);
-    q.addEventListener("input", function () { state.q = q.value.trim(); $("#search").classList.toggle("has-text", !!state.q); state.sel = -1; renderSuggest(); renderGrid(); });
+    q.addEventListener("input", function () {
+      state.q = q.value.trim(); $("#search").classList.toggle("has-text", !!state.q); state.sel = -1;
+      if (state.q && state.brand) { state.brand = null; renderBrandChips(); toast("Brand filter cleared so the search covers every brand"); }
+      renderSuggest(); renderGrid();
+    });
     q.addEventListener("keydown", function (e) {
       var rows = $$("#suggest .row");
       if (e.key === "ArrowDown") { e.preventDefault(); state.sel = Math.min(rows.length - 1, state.sel + 1); renderSuggest(); }

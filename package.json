@@ -1,8 +1,8 @@
 {
   "name": "gts-hub",
-  "version": "3.0.0",
+  "version": "3.1.0",
   "private": true,
-  "description": "GTS Hub — work tracking for the B&H Guest Technical Services counter (Salesforce log, overnight assignments, alerts, catalog, station).",
+  "description": "GTS Hub \u2014 work tracking for the B&H Guest Technical Services counter (Salesforce log, overnight assignments, alerts, catalog, station).",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -13,7 +13,8 @@
     "next": "^15.3.0",
     "postgres": "^3.4.4",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "react-dom": "^19.0.0",
+    "@vercel/blob": "^1.1.1"
   },
   "engines": {
     "node": ">=18.18.0"

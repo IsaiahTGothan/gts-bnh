@@ -83,6 +83,23 @@ function useGTSStore() {
     setSettings: (patch) => mutate((p) => ({ ...p, settings: { ...p.settings, ...patch } })),
     setTech: (id) => mutate((p) => act({ ...p, settings: { ...p.settings, currentTech: id, onboarded: true } }, 'tech.switch', TECH_BY_ID[id]?.name || '—', 'Signed in at the counter', { tech: id })),
 
+    // ── Team-added firmware gear (Firmware tab → Add gear) ─────────────
+    addGear: (data) => {
+      const cur = stateRef.current;
+      const ts = nowISO();
+      const created = { id: uid('gr'), ...data, addedBy: techName(cur.settings.currentTech), createdAt: ts, updatedAt: ts };
+      mutate((p) => act({ ...p, gear: [created, ...(p.gear || [])] }, 'gear.add', `${created.brand} ${created.model}`, created.version ? `Firmware ${created.version}` : 'Added to the firmware hub'));
+      return created;
+    },
+    updateGear: (id, patch) => mutate((p) => {
+      const g = (p.gear || []).find((x) => x.id === id); if (!g) return p;
+      return act({ ...p, gear: p.gear.map((x) => (x.id === id ? stamp(x, patch) : x)) }, 'gear.update', `${g.brand} ${g.model}`, patch.version ? `Firmware ${patch.version}` : 'Updated');
+    }),
+    removeGear: (id) => mutate((p) => {
+      const g = (p.gear || []).find((x) => x.id === id); if (!g) return p;
+      return act({ ...p, gear: p.gear.map((x) => (x.id === id ? stamp(x, { deletedAt: nowISO() }) : x)) }, 'gear.remove', `${g.brand} ${g.model}`, 'Removed from the firmware hub');
+    }),
+
     // ── Salesforce tickets ──────────────────────────────────────────────
     addTicket: (data) => {
       // Built from the latest state (ref) so the caller gets the record synchronously.
