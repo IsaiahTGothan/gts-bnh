@@ -427,6 +427,18 @@ a.btn:hover, a.opt:hover { text-decoration: none; }
 .bp-item .grow { flex: 1; min-width: 0; }
 @media (max-width: 600px) { .bp-menu.is-wide { min-width: 0; } .filters .dd { min-width: 0; flex: 1; } }
 
+/* brand wordmarks */
+.bm { display: inline-flex; align-items: center; gap: 6px; padding: 3px 8px; border-radius: 5px; line-height: 1.1; white-space: nowrap; border: 1px solid rgba(0,0,0,.25); box-shadow: 0 1px 2px rgba(0,0,0,.35); text-transform: none; user-select: none; }
+.bm-bar { display: inline-flex; gap: 2px; }
+.bm-bar i { display: inline-block; width: 5px; height: 11px; border-radius: 1px; }
+.bm-generic { background: color-mix(in srgb, var(--c) 22%, #000 20%); color: var(--c); border-color: color-mix(in srgb, var(--c) 45%, transparent); font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+.bp-item .bm { flex: 1; justify-content: flex-start; }
+.bp-list { grid-template-columns: 1fr 1fr 1fr; }
+.bp-menu.is-wide { min-width: 560px; }
+@media (max-width: 700px) { .bp-list { grid-template-columns: 1fr 1fr; } .bp-menu.is-wide { min-width: 0; } }
+@media (max-width: 520px) { .bp-list { grid-template-columns: 1fr; } }
+.card .art .tagline .bm { backdrop-filter: none; }
+
 </style>
 
 <div class="backdrop"><div class="blob b1"></div><div class="blob b2"></div><div class="blob b3"></div><div class="grain"></div></div>
@@ -606,6 +618,63 @@ a.btn:hover, a.opt:hover { text-decoration: none; }
 <div class="toasts" id="toasts"></div>
 
 <script>
+/* Brand wordmarks: typographic lookalikes of each maker's logo (no trademarked artwork), so a brand is
+   recognizable at a glance in dropdowns and cards. Shared with GTS Hub via tools/build_web.py. */
+(function (global) {
+  var S = "'Helvetica Neue', Helvetica, Arial, sans-serif", B = "'Arial Black', 'Helvetica Neue', Impact, sans-serif", SER = "Georgia, 'Times New Roman', serif", M = "'Futura', 'Avenir Next', 'Century Gothic', 'Helvetica Neue', sans-serif";
+  var MARKS = {
+    "Sony":              { t: "SONY",            bg: "#000", fg: "#fff", font: B,   w: 900, ls: ".12em" },
+    "Canon":             { t: "Canon",           bg: "#cc0000", fg: "#fff", font: SER, w: 700, ls: "-.01em", it: 1 },
+    "Nikon":             { t: "Nikon",           bg: "#ffe100", fg: "#111", font: B, w: 900, ls: "-.02em" },
+    "Fujifilm":          { t: "FUJIFILM",        bg: "#fff", fg: "#111", font: S, w: 800, ls: "-.01em", bar: ["#e60012", "#00a040"] },
+    "Panasonic":         { t: "Panasonic",       bg: "#0048ab", fg: "#fff", font: S, w: 700, ls: "-.01em" },
+    "OM System":         { t: "OM SYSTEM",       bg: "#111", fg: "#fff", font: S, w: 700, ls: ".16em" },
+    "Olympus":           { t: "OLYMPUS",         bg: "#0a2a66", fg: "#fff", font: S, w: 800, ls: ".1em" },
+    "Leica":             { t: "Leica",           bg: "#e2001a", fg: "#fff", font: SER, w: 700, ls: "0", round: 1 },
+    "Hasselblad":        { t: "HASSELBLAD",      bg: "#111", fg: "#e9d8b0", font: S, w: 500, ls: ".2em" },
+    "Ricoh":             { t: "RICOH",           bg: "#fff", fg: "#d7141a", font: B, w: 900, ls: ".02em" },
+    "Pentax":            { t: "PENTAX",          bg: "#fff", fg: "#d7141a", font: B, w: 900, ls: ".06em" },
+    "Sigma":             { t: "SIGMA",           bg: "#fff", fg: "#111", font: S, w: 900, ls: ".14em" },
+    "Tamron":            { t: "TAMRON",          bg: "#fff", fg: "#111", font: S, w: 800, ls: ".1em", bar: ["#c8a24a"] },
+    "Viltrox":           { t: "VILTROX",         bg: "#111", fg: "#19b7ff", font: S, w: 800, ls: ".08em", it: 1 },
+    "Samyang":           { t: "SAMYANG",         bg: "#fff", fg: "#d1222b", font: S, w: 800, ls: ".06em" },
+    "Blackmagic Design": { t: "Blackmagicdesign", bg: "#000", fg: "#fff", font: S, w: 300, ls: "0" },
+    "DJI":               { t: "dji",             bg: "#000", fg: "#fff", font: B, w: 900, ls: ".02em" },
+    "GoPro":             { t: "GoPro",           bg: "#00aeef", fg: "#fff", font: S, w: 800, ls: "-.01em" },
+    "Insta360":          { t: "Insta360",        bg: "#ffd500", fg: "#111", font: S, w: 800, ls: "-.01em" },
+    "Godox":             { t: "Godox",           bg: "#111", fg: "#f7a81b", font: S, w: 800, ls: ".02em" },
+    "Profoto":           { t: "Profoto",         bg: "#fff", fg: "#111", font: S, w: 500, ls: ".04em" },
+    "Westcott":          { t: "Westcott",        bg: "#fff", fg: "#111", font: S, w: 800, ls: "0", it: 1 },
+    "Nissin":            { t: "Nissin",          bg: "#fff", fg: "#c8102e", font: S, w: 800, ls: ".02em" },
+    "Neewer":            { t: "NEEWER",          bg: "#111", fg: "#8bc34a", font: S, w: 800, ls: ".1em" },
+    "Aputure":           { t: "aputure",         bg: "#000", fg: "#fff", font: S, w: 700, ls: ".02em" },
+    "Nanlite":           { t: "NANLITE",         bg: "#000", fg: "#e6e6e6", font: S, w: 700, ls: ".12em" },
+    "Elinchrom":         { t: "Elinchrom",       bg: "#ffeb3b", fg: "#111", font: S, w: 700, ls: "0" },
+    "Zhiyun":            { t: "ZHIYUN",          bg: "#111", fg: "#fff", font: S, w: 800, ls: ".12em" },
+    "Angelbird":         { t: "ANGELBIRD",       bg: "#ff6a00", fg: "#fff", font: S, w: 800, ls: ".06em" },
+    "ProGrade Digital":  { t: "ProGrade",        bg: "#1b1b1b", fg: "#80cbc4", font: S, w: 700, ls: "0" },
+    "Lexar":             { t: "Lexar",           bg: "#fff", fg: "#111", font: S, w: 800, ls: ".02em" },
+    "Atomos":            { t: "ATOMOS",          bg: "#000", fg: "#5cb3ff", font: S, w: 800, ls: ".14em" },
+    "RØDE":              { t: "RØDE",            bg: "#000", fg: "#ff2020", font: B, w: 900, ls: ".04em" },
+    "Hollyland":         { t: "Hollyland",       bg: "#111", fg: "#64b5f6", font: S, w: 700, ls: "0" },
+    "Zoom":              { t: "ZOOM",            bg: "#fff", fg: "#111", font: B, w: 900, ls: ".1em" },
+    "Microsoft":         { t: "Microsoft",       bg: "#fff", fg: "#555", font: S, w: 600, ls: "0" }
+  };
+  function mark(brand, opts) {
+    opts = opts || {};
+    var m = MARKS[brand];
+    var size = opts.size || 11;
+    if (!m) {
+      var c = (opts.color || "#d9a066");
+      return '<span class="bm bm-generic" style="--c:' + c + ';font-size:' + size + 'px">' + (brand || "").replace(/[&<>"]/g, function (ch) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[ch]; }) + '</span>';
+    }
+    var style = "background:" + m.bg + ";color:" + m.fg + ";font-family:" + m.font + ";font-weight:" + m.w + ";letter-spacing:" + m.ls + ";font-size:" + size + "px" + (m.it ? ";font-style:italic" : "") + (m.round ? ";border-radius:999px;padding-left:" + Math.round(size * .9) + "px;padding-right:" + Math.round(size * .9) + "px" : "");
+    var bar = m.bar ? '<span class="bm-bar">' + m.bar.map(function (col) { return '<i style="background:' + col + '"></i>'; }).join("") + '</span>' : "";
+    return '<span class="bm" style="' + style + '" title="' + brand.replace(/"/g, "&quot;") + '">' + m.t + bar + '</span>';
+  }
+  global.BrandMarks = { MARKS: MARKS, mark: mark };
+})(window);
+
 /* Product illustrations as inline SVG, tinted with the brand colour. Zero network cost. */
 (function (global) {
   function pick(item) {
@@ -1042,6 +1111,7 @@ a.btn:hover, a.opt:hover { text-decoration: none; }
 
   // ------------------------------------------------------------------ helpers
   function color(it) { return it.brandColor || state.brandColors[it.brand] || "#e3a85c"; }
+  function bmark(brand, size) { return BrandMarks.mark(brand, { size: size || 11, color: state.brandColors[brand] || "#d9a066" }); }
   function fw(it) { return it.firmware || {}; }
   function osOf() { return (state.system && state.system.os) || "mac"; }
   function human(n) { if (!n && n !== 0) return "?"; var u = ["B", "KB", "MB", "GB", "TB"], i = 0; n = +n; while (n >= 1024 && i < 4) { n /= 1024; i++; } return (i ? n.toFixed(1) : n) + " " + u[i]; }
@@ -1155,9 +1225,9 @@ a.btn:hover, a.opt:hover { text-decoration: none; }
     function render() {
       var c = cur(), all = opts.options();
       var list = all.filter(function (o) { return !filter || o.label.toLowerCase().indexOf(filter.toLowerCase()) >= 0; });
-      mount.innerHTML = '<button type="button" class="bp-btn' + (open ? " is-open" : "") + '">' + (opts.prefix ? '<span class="bp-prefix">' + opts.prefix + '</span>' : "") + (c.color ? '<span class="bp-dot" style="--c:' + esc(c.color) + '"></span>' : "") + '<span class="bp-label">' + esc(c.label) + '</span>' + (c.count != null ? '<span class="bp-count">' + c.count + '</span>' : "") + '<span class="bp-caret">' + I.x.replace("M6 6l12 12M18 6 6 18", "m6 9 6 6 6-6") + '</span></button>' +
+      mount.innerHTML = '<button type="button" class="bp-btn' + (open ? " is-open" : "") + '">' + (opts.prefix ? '<span class="bp-prefix">' + opts.prefix + '</span>' : "") + (c.brand ? bmark(c.brand, 11) : c.color ? '<span class="bp-dot" style="--c:' + esc(c.color) + '"></span>' : "") + '<span class="bp-label">' + (c.brand ? "" : esc(c.label)) + '</span>' + (c.count != null ? '<span class="bp-count">' + c.count + '</span>' : "") + '<span class="bp-caret">' + I.x.replace("M6 6l12 12M18 6 6 18", "m6 9 6 6 6-6") + '</span></button>' +
         (open ? '<div class="bp-menu' + (opts.wide ? " is-wide" : "") + '">' + (opts.search ? '<input type="text" class="bp-search" placeholder="' + esc(opts.search) + '" value="' + esc(filter) + '">' : "") + '<div class="bp-list' + (opts.columns === 1 ? " one" : "") + '">' +
-          list.map(function (o) { return '<button type="button" class="bp-item' + (o.value === c.value ? " is-sel" : "") + '" data-v="' + esc(o.value) + '">' + (o.color ? '<span class="bp-dot" style="--c:' + esc(o.color) + '"></span>' : "") + '<span class="grow">' + esc(o.label) + '</span>' + (o.count != null ? '<span class="bp-count">' + o.count + '</span>' : "") + '</button>'; }).join("") +
+          list.map(function (o) { return '<button type="button" class="bp-item' + (o.value === c.value ? " is-sel" : "") + '" data-v="' + esc(o.value) + '">' + (o.brand ? bmark(o.brand, 11) : o.color ? '<span class="bp-dot" style="--c:' + esc(o.color) + '"></span>' : "") + '<span class="grow">' + (o.brand ? "" : esc(o.label)) + '</span>' + (o.count != null ? '<span class="bp-count">' + o.count + '</span>' : "") + '</button>'; }).join("") +
           (!list.length ? '<div class="muted small" style="padding:8px 12px">No match</div>' : "") + '</div></div>' : "");
       $(".bp-btn", mount).onclick = function () { open = !open; filter = ""; render(); var i = $(".bp-search", mount); if (i) i.focus(); };
       var si = $(".bp-search", mount);
@@ -1181,7 +1251,7 @@ a.btn:hover, a.opt:hover { text-decoration: none; }
     if (!$("#dd-brand", host)) host.innerHTML = '<span class="label">Brand</span><div class="dd" id="dd-brand"></div><span class="label" style="margin-left:14px">Sort</span><div class="dd dd-sort" id="dd-sort"></div>';
     dropdown($("#dd-brand", host), {
       prefix: null, search: "Type to filter brands", wide: true,
-      options: function () { return [{ value: "", label: "All brands", color: "#e3a85c", count: total }].concat(brands.map(function (b) { return { value: b, label: b, color: state.brandColors[b] || "#e3a85c", count: counts[b] }; })); },
+      options: function () { return [{ value: "", label: "All brands", color: "#e3a85c", count: total }].concat(brands.map(function (b) { return { value: b, label: b, brand: b, color: state.brandColors[b] || "#e3a85c", count: counts[b] }; })); },
       value: function () { return state.brand || ""; },
       onChange: function (v) { state.brand = v || null; renderBrandChips(); renderGrid(); }
     });
@@ -1214,7 +1284,7 @@ a.btn:hover, a.opt:hover { text-decoration: none; }
       el.className = "card"; el.style.setProperty("--c", c); el.style.transitionDelay = Math.min(i, 12) * 35 + "ms";
       var m = METHOD_LABEL[f.method] || METHOD_LABEL.page;
       el.innerHTML =
-        '<div class="art">' + artFor(it) + '<div class="tagline"><span class="btag" style="--c:' + c + '">' + esc(it.brand) + '</span></div></div>' +
+        '<div class="art">' + artFor(it) + '<div class="tagline">' + bmark(it.brand, 11) + '</div></div>' +
         '<div class="body"><h3>' + esc(it.model) + '</h3><div class="full">' + esc(it.fullName || "") + '</div>' +
         '<div class="row">' + versionBadge(it) + '<span class="method">' + m[1] + esc(f.updateApp ? m[0] + " · " + f.updateApp : m[0]) + '</span></div>' +
         '<div class="row">' + (it.tags || []).slice(0, 4).map(function (t) { return '<span class="tag' + (t === "team-added" ? " team" : "") + '">' + esc(t) + '</span>'; }).join("") + '</div>' +
@@ -1253,7 +1323,7 @@ a.btn:hover, a.opt:hover { text-decoration: none; }
     d.innerHTML =
       '<div class="hero-art" style="--c:' + c + '">' + artFor(it) + '<button class="icon-btn close" id="drawer-close">' + I.x + '</button></div>' +
       '<div class="content">' +
-      '<span class="btag" style="--c:' + c + '">' + esc(it.brand) + '</span>' +
+      bmark(it.brand, 13) +
       '<h2>' + esc(it.model) + '</h2><div class="fullname">' + esc(it.fullName || "") + (it.released ? ' · released ' + esc(it.released) : "") + (it.priceUSD ? ' · about $' + it.priceUSD.toLocaleString() : "") + '</div>' +
       '<div class="tags">' + (it.tags || []).map(function (t) { return '<span class="tag">' + esc(t) + '</span>'; }).join("") + (it.aliases || []).slice(0, 4).map(function (t) { return '<span class="tag" style="opacity:.7">' + esc(t) + '</span>'; }).join("") + '</div>' +
       (it.summary ? '<p class="summary">' + esc(it.summary) + '</p>' : "") +
@@ -1673,9 +1743,9 @@ a.btn:hover, a.opt:hover { text-decoration: none; }
       var v = hidden.value;
       var list = brands.filter(function (b) { return !filter || b.toLowerCase().indexOf(filter.toLowerCase()) >= 0; });
       var custom = filter && !brands.some(function (b) { return b.toLowerCase() === filter.toLowerCase(); });
-      mount.innerHTML = '<button type="button" class="bp-btn' + (open ? " is-open" : "") + '"><span class="bp-dot" style="--c:' + esc(colorOf(v)) + '"></span><span class="bp-label">' + (v ? esc(v) : '<span class="muted">Pick a brand…</span>') + '</span><span class="bp-caret">' + I.x.replace("M6 6l12 12M18 6 6 18", "m6 9 6 6 6-6") + '</span></button>' +
+      mount.innerHTML = '<button type="button" class="bp-btn' + (open ? " is-open" : "") + '">' + (v ? bmark(v, 12) : '<span class="bp-dot" style="--c:#d9a066"></span>') + '<span class="bp-label">' + (v ? "" : '<span class="muted">Pick a brand…</span>') + '</span><span class="bp-caret">' + I.x.replace("M6 6l12 12M18 6 6 18", "m6 9 6 6 6-6") + '</span></button>' +
         (open ? '<div class="bp-menu"><input type="text" class="bp-search" placeholder="Type to filter or add a brand" value="' + esc(filter) + '"><div class="bp-list">' +
-          list.map(function (b) { return '<button type="button" class="bp-item' + (b === v ? " is-sel" : "") + '" data-b="' + esc(b) + '"><span class="bp-dot" style="--c:' + esc(colorOf(b)) + '"></span>' + esc(b) + '</button>'; }).join("") +
+          list.map(function (b) { return '<button type="button" class="bp-item' + (b === v ? " is-sel" : "") + '" data-b="' + esc(b) + '">' + bmark(b, 11) + '</button>'; }).join("") +
           (custom ? '<button type="button" class="bp-item is-new" data-b="' + esc(filter) + '"><span class="bp-dot" style="--c:#d9a066"></span>Add “' + esc(filter) + '” as a new brand</button>' : "") +
           (!list.length && !custom ? '<div class="muted small" style="padding:8px 12px">No brand matches</div>' : "") + '</div></div>' : "");
       $(".bp-btn", mount).onclick = function () { open = !open; filter = ""; render(); if (open) { var i = $(".bp-search", mount); i.focus(); } };

@@ -1234,3 +1234,12 @@ body, .rail, .rail::after, .rail-item, .rail-icon, .strip, .main, .panel, .mobil
 .bp-item.is-sel { background: var(--accent-soft); color: var(--accent); }
 .bp-item.is-new { grid-column: 1 / -1; color: var(--accent); border-top: 1px solid var(--line); border-radius: 0; margin-top: 4px; }
 @media (max-width: 520px) { .bp-list { grid-template-columns: 1fr; } }
+
+/* brand wordmarks */
+.bm { display: inline-flex; align-items: center; gap: 6px; padding: 3px 8px; border-radius: 5px; line-height: 1.1; white-space: nowrap; border: 1px solid rgba(0,0,0,.25); box-shadow: 0 1px 2px rgba(0,0,0,.35); user-select: none; }
+.bm-bar { display: inline-flex; gap: 2px; }
+.bm-bar i { display: inline-block; width: 5px; height: 11px; border-radius: 1px; }
+.bm-generic { background: color-mix(in srgb, var(--c) 22%, #000 20%); color: var(--c); border-color: color-mix(in srgb, var(--c) 45%, transparent); font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+.bp-item .bm { flex: 1; justify-content: flex-start; }
+.bp-list { grid-template-columns: 1fr 1fr 1fr; }
+@media (max-width: 700px) { .bp-list { grid-template-columns: 1fr 1fr; } }

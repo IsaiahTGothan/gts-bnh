@@ -16,6 +16,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { FIRMWARE_VIEWS } from '../lib/constants';
 import { relTime } from '../lib/utils';
 import { BRANDS, BRAND_COLORS, DEFAULT_BRAND_COLOR } from '../lib/brand-colors';
+import { BRAND_MARKS } from '../lib/brand-marks';
 import { useStore } from './GTSApp';
 import { Btn, Field, Icon, Input, Modal, Select, Textarea } from './ui';
 
@@ -239,7 +240,6 @@ function BrandPicker({ value, onChange }) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState('');
   const box = useRef(null);
-  const colorOf = (b) => BRAND_COLORS[b] || DEFAULT_BRAND_COLOR;
   useEffect(() => {
     if (!open) return undefined;
     const h = (e) => { if (box.current && !box.current.contains(e.target)) setOpen(false); };
@@ -252,8 +252,8 @@ function BrandPicker({ value, onChange }) {
   return (
     <div className="bp" ref={box}>
       <button type="button" className={`bp-btn ${open ? 'is-open' : ''}`} onClick={() => setOpen((o) => !o)} aria-haspopup="listbox" aria-expanded={open}>
-        <span className="bp-dot" style={{ '--c': colorOf(value) }} />
-        <span className="bp-label">{value || <span className="muted">Pick a brand…</span>}</span>
+        {value ? <BrandMark brand={value} size={12} /> : <span className="bp-dot" style={{ '--c': DEFAULT_BRAND_COLOR }} />}
+        <span className="bp-label">{value ? '' : <span className="muted">Pick a brand…</span>}</span>
         <Icon name="chevron-down" size={14} className="bp-caret" />
       </button>
       {open && (
@@ -263,7 +263,7 @@ function BrandPicker({ value, onChange }) {
           <div className="bp-list">
             {list.map((b) => (
               <button type="button" key={b} role="option" aria-selected={b === value} className={`bp-item ${b === value ? 'is-sel' : ''}`} onClick={() => pick(b)}>
-                <span className="bp-dot" style={{ '--c': colorOf(b) }} />{b}
+                <BrandMark brand={b} size={11} />
               </button>
             ))}
             {custom && <button type="button" className="bp-item is-new" onClick={() => pick(q.trim())}><span className="bp-dot" style={{ '--c': DEFAULT_BRAND_COLOR }} />Add “{q.trim()}” as a new brand</button>}
@@ -273,4 +273,12 @@ function BrandPicker({ value, onChange }) {
       )}
     </div>
   );
+}
+
+export function BrandMark({ brand, size = 11 }) {
+  const m = BRAND_MARKS[brand];
+  if (!m) return <span className="bm bm-generic" style={{ '--c': BRAND_COLORS[brand] || DEFAULT_BRAND_COLOR, fontSize: size }}>{brand}</span>;
+  const style = { background: m.bg, color: m.fg, fontFamily: m.font, fontWeight: m.w, letterSpacing: m.ls, fontSize: size, fontStyle: m.it ? 'italic' : 'normal' };
+  if (m.round) { style.borderRadius = 999; style.paddingLeft = Math.round(size * 0.9); style.paddingRight = Math.round(size * 0.9); }
+  return <span className="bm" style={style} title={brand}>{m.t}{m.bar && <span className="bm-bar">{m.bar.map((c) => <i key={c} style={{ background: c }} />)}</span>}</span>;
 }
