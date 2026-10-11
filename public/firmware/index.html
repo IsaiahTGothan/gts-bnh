@@ -388,6 +388,15 @@ a.btn:hover, a.opt:hover { text-decoration: none; }
 
 .tag.team { color: var(--accent); border-color: rgba(227,168,92,.4); background: rgba(227,168,92,.1); }
 
+.g-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 8px 12px; }
+.field > span { font-size: 11px; color: var(--faint); text-transform: uppercase; letter-spacing: 1px; }
+.field textarea { background: var(--panel); border: 1px solid var(--line-2); color: var(--text); border-radius: 10px; padding: 8px 10px; outline: 0; font: inherit; font-size: 13.5px; resize: vertical; }
+.field input[type=date] { background: var(--panel); border: 1px solid var(--line-2); color: var(--text); border-radius: 10px; padding: 7px 10px; }
+.g-drop { display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 56px; padding: 10px 14px; border: 1.5px dashed var(--line-2); border-radius: 12px; background: var(--panel); color: var(--muted); cursor: pointer; transition: all .2s var(--ease); }
+.g-drop:hover, .g-drop.is-drag { border-color: var(--accent); background: rgba(227,168,92,.08); color: var(--text); }
+.g-drop svg { width: 16px; height: 16px; }
+.embed [data-addgear].btn.ghost { display: none; }
+
 </style>
 
 <div class="backdrop"><div class="blob b1"></div><div class="blob b2"></div><div class="blob b3"></div><div class="grain"></div></div>
@@ -416,6 +425,7 @@ a.btn:hover, a.opt:hover { text-decoration: none; }
       <button data-view="downloads"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12M7 10l5 5 5-5M4 19h16"/></svg>Downloads <span class="pill" id="jobs-pill"></span></button>
       <button data-view="about"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 8h.01M11 12h1v4h1"/></svg>About</button>
     </nav>
+    <button class="btn sm primary" data-addgear title="Add a camera, lens or flash that is missing (or a newer firmware)" style="margin-right:6px"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" style="width:14px;height:14px"><path d="M12 5v14M5 12h14"/></svg> Add gear</button>
     <button class="icon-btn" id="btn-settings" title="Settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></button>
   </div>
 </header>
@@ -441,6 +451,7 @@ a.btn:hover, a.opt:hover { text-decoration: none; }
       <label class="small muted">Sort <select id="sort"><option value="brand">Brand · Model</option><option value="model">Model A–Z</option><option value="price">Price (low → high)</option><option value="newest">Newest firmware</option></select></label>
     </div>
     <div class="grid" id="grid"></div>
+    <div class="row" style="justify-content:center;margin:6px 0 2px"><button class="btn sm ghost" data-addgear>+ Missing a model? Add gear</button></div>
     <div class="empty-state hidden" id="empty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><div>No matches. Try the model code (ILCE-7M4, R6M2, Z6III) or just the brand.</div></div>
   </section>
 
@@ -1072,11 +1083,17 @@ a.btn:hover, a.opt:hover { text-decoration: none; }
     $$("[data-count]").forEach(function (p) { p.textContent = counts[p.dataset.count] || 0; });
     if (CAT_VIEWS[state.view]) { renderBrandChips(); renderGrid(); }
   });
+  function rawFromItem(it) {
+    var fw = it.firmware || {}, dl = fw.downloads || [];
+    var file = dl.filter(function (x) { return x.path; })[0];
+    var link = dl.filter(function (x) { return x.url && !x.path; })[0];
+    return { id: it.id, category: it.category, brand: it.brand, model: it.model, version: fw.version || "", date: fw.date || "", page: fw.page || "", link: link ? link.url : "", aliases: (it.aliases || []).join(", "), howTo: fw.howTo || "", notes: fw.notes || "", files: file ? [{ name: file.filename, path: file.path, size: (file.sizeMB || 0) * 1048576, type: file.type }] : [] };
+  }
   function normalizeCustom(raw) {
     if (!raw || !raw.model) return null;
     var brand = (raw.brand || "Other").trim();
     var files = [];
-    (raw.files || []).forEach(function (f) { if (f && f.url) files.push({ os: "any", type: guessType(f.name || f.url), url: f.url, filename: f.name || f.url.split("/").pop(), sizeMB: f.size ? Math.round(f.size / 104857.6) / 10 : undefined }); });
+    (raw.files || []).forEach(function (f) { if (f && (f.url || f.path)) files.push({ os: "any", type: f.type || guessType(f.name || f.url || f.path), url: f.url || null, path: f.path || null, filename: f.name || (f.url || f.path).split(/[\\/]/).pop(), sizeMB: f.size ? Math.round(f.size / 104857.6) / 10 : undefined }); });
     if (raw.link) files.push({ os: "any", type: guessType(raw.link, true), url: raw.link, filename: raw.linkLabel || raw.link.replace(/^https?:\/\//, "").slice(0, 60) });
     var method = raw.method || (files.some(function (f) { return f.type === "installer"; }) ? "installer" : files.some(function (f) { return f.type === "cardfile"; }) ? "card" : "page");
     return {
@@ -1139,7 +1156,7 @@ a.btn:hover, a.opt:hover { text-decoration: none; }
         '<div class="art">' + artFor(it) + '<div class="tagline"><span class="btag" style="--c:' + c + '">' + esc(it.brand) + '</span></div></div>' +
         '<div class="body"><h3>' + esc(it.model) + '</h3><div class="full">' + esc(it.fullName || "") + '</div>' +
         '<div class="row">' + versionBadge(it) + '<span class="method">' + m[1] + esc(f.updateApp ? m[0] + " · " + f.updateApp : m[0]) + '</span></div>' +
-        '<div class="row">' + (it.tags || []).slice(0, 4).map(function (t) { return '<span class="tag">' + esc(t) + '</span>'; }).join("") + '</div>' +
+        '<div class="row">' + (it.tags || []).slice(0, 4).map(function (t) { return '<span class="tag' + (t === "team-added" ? " team" : "") + '">' + esc(t) + '</span>'; }).join("") + '</div>' +
         '<div class="foot"><button class="btn primary sm act-update">' + I.bolt + ' Update now</button><button class="btn sm ghost act-details">Details</button>' + (it.priceUSD ? '<span class="price">$' + it.priceUSD.toLocaleString() + '</span>' : "") + '</div></div>';
       el.addEventListener("click", function (e) { if (e.target.closest(".act-update")) { openUpdate(it); } else { openItem(it); } });
       frag.appendChild(el); io.observe(el);
@@ -1179,7 +1196,7 @@ a.btn:hover, a.opt:hover { text-decoration: none; }
       '<h2>' + esc(it.model) + '</h2><div class="fullname">' + esc(it.fullName || "") + (it.released ? ' · released ' + esc(it.released) : "") + (it.priceUSD ? ' · about $' + it.priceUSD.toLocaleString() : "") + '</div>' +
       '<div class="tags">' + (it.tags || []).map(function (t) { return '<span class="tag">' + esc(t) + '</span>'; }).join("") + (it.aliases || []).slice(0, 4).map(function (t) { return '<span class="tag" style="opacity:.7">' + esc(t) + '</span>'; }).join("") + '</div>' +
       (it.summary ? '<p class="summary">' + esc(it.summary) + '</p>' : "") +
-      '<div class="actions"><button class="btn primary" id="d-update">' + I.bolt + ' Update now</button><button class="btn" id="d-check">' + I.refresh + ' Check for newer</button>' + extBtn(f.page, "ghost", I.web + " Official page", "d-page") + '</div>' +
+      '<div class="actions"><button class="btn primary" id="d-update">' + I.bolt + ' Update now</button>' + (it.custom ? '<button class="btn" id="d-edit">' + I.installer + ' Edit entry</button>' : '<button class="btn" id="d-check">' + I.refresh + ' Check for newer</button>') + extBtn(f.page, "ghost", I.web + " Official page", "d-page") + '</div>' +
       '<div class="section"><h4>Latest firmware <span class="right">' + (f.verified ? "verified " + esc(f.verified) : esc(f.confidence || "unknown")) + ' <span class="conf ' + esc(f.confidence || "unknown") + '"></span></span></h4>' +
       '<div class="fw-head"><span class="big">' + (f.version ? esc(f.version) : (f.method === "none" ? "—" : "?")) + '</span><div class="meta">' + (f.date ? "Released " + esc(f.date) + "<br>" : "") + m[1] + " " + esc(m[0]) + (f.updateApp ? " · " + esc(f.updateApp) : "") + '</div></div>' +
       (f.notes ? '<p class="fw-notes">' + esc(f.notes) + '</p>' : "") +
@@ -1195,7 +1212,8 @@ a.btn:hover, a.opt:hover { text-decoration: none; }
     $("#drawer-close").onclick = closeDrawer;
     $("#d-update").onclick = function () { openUpdate(it); };
     if (!STATIC && $("#d-page")) $("#d-page").onclick = function () { openExternal(f.page); };
-    $("#d-check").onclick = function () { checkNewer(it, $("#check-out"), $("#d-check")); };
+    if ($("#d-check")) $("#d-check").onclick = function () { checkNewer(it, $("#check-out"), $("#d-check")); };
+    if ($("#d-edit")) $("#d-edit").onclick = function () { closeDrawer(); openAddGear(it._raw || rawFromItem(it)); };
     $$(".dl-get", d).forEach(function (b) { b.onclick = function () { startDownload(it, dls[+b.dataset.i]); }; });
 
     d.classList.add("open"); $("#scrim").classList.add("open");
@@ -1220,6 +1238,7 @@ a.btn:hover, a.opt:hover { text-decoration: none; }
   // ------------------------------------------------------------------ update flow (modal)
   function bestDownloads(it) {
     var os = osOf(), dls = fw(it).downloads || [];
+    dls = dls.filter(function (d) { return d.url; });
     var mine = dls.filter(function (d) { return d.os === os || d.os === "any"; });
     return { installer: mine.filter(function (d) { return d.type === "installer"; })[0], card: dls.filter(function (d) { return d.type === "cardfile"; })[0], app: dls.filter(function (d) { return d.type === "app"; })[0], page: dls.filter(function (d) { return d.type === "page"; })[0], otherOs: dls.filter(function (d) { return d.type === "installer" && d.os !== os && d.os !== "any"; }) };
   }
@@ -1237,6 +1256,8 @@ a.btn:hover, a.opt:hover { text-decoration: none; }
     if (f.method === "none" && !f.version) {
       html += '<div class="notice">No firmware has been released for this product. Nothing to install.</div>';
     }
+    var localFile = (fw(it).downloads || []).filter(function (x) { return x.path; })[0];
+    if (localFile && !STATIC) html += opt("local", I.card, (localFile.type === "installer" ? "Open the saved installer" : "Copy the saved firmware file to a memory card"), esc(localFile.filename) + " is already on this computer (team-added).");
     if (b.installer) html += opt("installer", I.installer, "Download " + (STATIC ? "the updater" : "&amp; run the updater"), esc(b.installer.filename || "installer") + " for " + osName(osOf()) + (b.installer.sizeMB ? " · " + b.installer.sizeMB + " MB" : "") + (STATIC ? ". Run it after the download finishes." : ". Opens automatically when the download finishes."), false, b.installer.url);
     if (b.card) html += opt("card", I.card, "Download the firmware file" + (STATIC ? "" : " → copy to memory card"), esc(b.card.filename || "firmware") + (b.card.sizeMB ? " · " + b.card.sizeMB + " MB" : "") + (STATIC ? ". Copy it to the root of a memory card formatted in the camera, then run the update from the menu." : ". Then insert the card in the camera and run the update from the menu."), false, b.card.url);
     if (f.method === "app" || b.app) html += opt("app", I.app, "Get " + esc(f.updateApp || "the companion app"), "This product updates through " + esc(f.updateApp || "its app") + ". Install it, connect the device, and let the app update it.", false, (b.app && b.app.url) || f.page);
@@ -1248,7 +1269,8 @@ a.btn:hover, a.opt:hover { text-decoration: none; }
       if (o.tagName === "A") { o.onclick = function () { toast("Opening in a new tab…"); }; return; }
       o.onclick = function () {
         var a = o.dataset.act;
-        if (a === "installer") startDownload(it, b.installer, { autoOpen: true });
+        if (a === "local") { if (localFile.type === "installer") { api.post("/api/open", { path: localFile.path }); closeModal(); } else cardPicker(it, localFile.path); }
+        else if (a === "installer") startDownload(it, b.installer, { autoOpen: true });
         else if (a === "card") startDownload(it, b.card, { card: true });
         else if (a === "app") { openExternal((b.app && b.app.url) || f.page); closeModal(); }
         else if (a === "otherOs") startDownload(it, b.otherOs[0]);
@@ -1500,6 +1522,93 @@ a.btn:hover, a.opt:hover { text-decoration: none; }
     $$(".log", el).forEach(function (l) { l.scrollTop = l.scrollHeight; });
   }
 
+  // ------------------------------------------------------------------ add gear (quick-add a missing model)
+  // Desktop app: saved to data/catalog.user.json by the server (file drops are kept locally for card copies).
+  // Web edition: saved in this browser (links only). Inside GTS Hub: handed to the shared team form.
+  var GEAR_KEY = "cfh-gear";
+  function localGear() { try { return JSON.parse(localStorage.getItem(GEAR_KEY) || "[]") || []; } catch (e) { return []; } }
+  function saveLocalGear(list) { try { localStorage.setItem(GEAR_KEY, JSON.stringify(list)); } catch (e) {} }
+  function applyLocalGear() {
+    state.items = state.items.filter(function (it) { return !it.custom || it._source !== "local"; });
+    localGear().forEach(function (raw) { var it = normalizeCustom(raw); if (it) { it._source = "local"; index(it); state.items.push(it); } });
+  }
+  function refreshCounts() {
+    var counts = {}; state.items.forEach(function (i) { counts[i.category] = (counts[i.category] || 0) + 1; });
+    $$("[data-count]").forEach(function (p) { p.textContent = counts[p.dataset.count] || 0; });
+  }
+  var GEAR_CATS = [["camera", "Camera"], ["lens", "Lens"], ["flash", "Flash / light"], ["accessory", "Accessory"]];
+  function openAddGear(existing) {
+    if (EMBED && window.parent !== window) { try { window.parent.postMessage({ type: "cfh:addgear", item: existing || null }, "*"); } catch (e) {} return; }
+    var d = Object.assign({ category: state.category && CAT_VIEWS[state.category] ? state.category : "camera", brand: "", model: "", version: "", date: "", page: "", link: "", aliases: "", howTo: "", notes: "", files: [] }, existing || {});
+    var brands = Object.keys(state.brandColors).sort();
+    var canUpload = !STATIC;
+    var mine = STATIC ? localGear() : state.items.filter(function (i) { return i.custom; }).map(function (i) { return i._raw || i; });
+    modal(mhead(existing ? "Edit " + esc(d.brand + " " + d.model) : "Add gear to the hub", STATIC ? "Saved in this browser. Paste the maker's link; files can't be stored on the hosted page." : "Saved to this computer's catalog (data/catalog.user.json). Drop the firmware file to keep it for card copies.") +
+      '<div class="mbody"><div class="g-grid">' +
+      '<label class="field"><span>Type</span><select id="g-cat">' + GEAR_CATS.map(function (c) { return '<option value="' + c[0] + '"' + (d.category === c[0] ? " selected" : "") + '>' + c[1] + '</option>'; }).join("") + '</select></label>' +
+      '<label class="field"><span>Brand *</span><input type="text" id="g-brand" list="g-brands" value="' + esc(d.brand) + '" placeholder="Panasonic"><datalist id="g-brands">' + brands.map(function (b) { return '<option value="' + esc(b) + '">'; }).join("") + '</datalist></label>' +
+      '<label class="field"><span>Model *</span><input type="text" id="g-model" value="' + esc(d.model) + '" placeholder="Lumix S1R II"></label>' +
+      '<label class="field"><span>Firmware version</span><input type="text" id="g-version" value="' + esc(d.version) + '" placeholder="Ver.1.5"></label>' +
+      '<label class="field"><span>Released</span><input type="date" id="g-date" value="' + esc(d.date || "") + '"></label>' +
+      '<label class="field"><span>Also called</span><input type="text" id="g-aliases" value="' + esc(d.aliases) + '" placeholder="DC-S1RM2, S1RII, S1R2"></label>' +
+      '</div>' +
+      '<label class="field"><span>Official firmware page</span><input type="text" id="g-page" value="' + esc(d.page) + '" placeholder="https://av.jpn.support.panasonic.com/support/global/cs/dsc/download/s1rm2/"></label>' +
+      '<label class="field"><span>Direct download link</span><input type="text" id="g-link" value="' + esc(d.link) + '" placeholder="https://…/S1RM2_V15.zip"></label>' +
+      (canUpload ? '<div class="field"><span>Firmware file</span><div class="g-drop" id="g-drop">' + (d.files && d.files.length ? '<b>' + esc(d.files[0].name) + '</b> <span class="muted small">kept on this computer</span>' : I.download + ' Drop the firmware file here or click to choose') + '</div><input type="file" id="g-file" hidden></div>' : "") +
+      '<div class="g-grid"><label class="field"><span>How to install</span><textarea id="g-howto" rows="3" placeholder="1) Charge battery. 2) Copy the file to the card root. 3) Setup → Firmware Version → Update.">' + esc(d.howTo) + '</textarea></label>' +
+      '<label class="field"><span>Notes</span><textarea id="g-notes" rows="3" placeholder="What changed, gotchas, intermediate versions…">' + esc(d.notes) + '</textarea></label></div>' +
+      '<div class="actions"><button class="btn primary" id="g-save">' + I.check + ' ' + (existing ? "Save changes" : "Add to hub") + '</button>' + (existing ? '<button class="btn danger" id="g-remove">Remove</button>' : "") + '<button class="btn ghost close">Cancel</button></div>' +
+      '<div id="g-err" class="notice bad hidden"></div>' +
+      (mine.length ? '<div class="section" style="margin-top:14px"><h4>Added here (' + mine.length + ')</h4><div class="dl-list">' + mine.map(function (g) { return '<div class="dl-row"><span class="os">' + I.card + '</span><div class="t"><b>' + esc((g.brand || "") + " " + (g.model || "")) + '</b><span>' + esc(g.version ? "fw " + g.version : "") + '</span></div><button class="btn sm g-edit" data-id="' + esc(g.id || "") + '">Edit</button></div>'; }).join("") + '</div></div>' : "") +
+      '</div>');
+    $$(".close", $("#modal")).forEach(function (b) { b.onclick = closeModal; });
+    var files = (d.files || []).slice();
+    var drop = $("#g-drop"), fileInput = $("#g-file");
+    function err(msg) { var e = $("#g-err"); e.textContent = msg; e.classList.toggle("hidden", !msg); }
+    if (drop) {
+      drop.onclick = function () { fileInput.click(); };
+      drop.ondragover = function (e) { e.preventDefault(); drop.classList.add("is-drag"); };
+      drop.ondragleave = function () { drop.classList.remove("is-drag"); };
+      drop.ondrop = function (e) { e.preventDefault(); drop.classList.remove("is-drag"); uploadFile(e.dataTransfer.files[0]); };
+      fileInput.onchange = function () { uploadFile(fileInput.files[0]); };
+    }
+    function uploadFile(file) {
+      if (!file) return;
+      drop.innerHTML = '<span class="spin" style="display:inline-block;width:12px;height:12px;border:2px solid var(--accent);border-right-color:transparent;border-radius:50%;animation:rot .8s linear infinite;margin-right:8px"></span>Saving ' + esc(file.name) + "…";
+      fetch("/api/gear/upload", { method: "POST", headers: { "X-File-Name": encodeURIComponent(file.name), "Content-Type": "application/octet-stream" }, body: file })
+        .then(function (r) { return r.json(); })
+        .then(function (r) { if (!r.ok) throw new Error(r.error || "upload failed"); files = [{ name: r.name, path: r.path, size: r.size, type: guessType(r.name) }]; drop.innerHTML = "<b>" + esc(r.name) + "</b> <span class='muted small'>" + human(r.size) + " · kept on this computer</span>"; })
+        .catch(function (e) { err("Could not save the file: " + e.message); drop.innerHTML = I.download + " Drop the firmware file here or click to choose"; });
+    }
+    $$(".g-edit", $("#modal")).forEach(function (b) { b.onclick = function () { var g = mine.filter(function (x) { return x.id === b.dataset.id; })[0]; if (g) openAddGear(g); }; });
+    var rm = $("#g-remove");
+    if (rm) rm.onclick = function () { removeGear(d.id); };
+    $("#g-save").onclick = function () {
+      var entry = { id: d.id || null, category: $("#g-cat").value, brand: $("#g-brand").value.trim(), model: $("#g-model").value.trim(), version: $("#g-version").value.trim(), date: $("#g-date").value, page: $("#g-page").value.trim(), link: $("#g-link").value.trim(), aliases: $("#g-aliases").value.trim(), howTo: $("#g-howto").value.trim(), notes: $("#g-notes").value.trim(), files: files };
+      if (!entry.brand || !entry.model) { err("Brand and model are required."); return; }
+      if (!entry.page && !entry.link && !files.length) { err("Add at least the official page, a download link, or a file."); return; }
+      if (STATIC) {
+        var list = localGear().filter(function (g) { return g.id !== (d.id || "~"); });
+        entry.id = d.id || ("team-" + compact(entry.brand + " " + entry.model)); entry.createdAt = d.createdAt || new Date().toISOString(); entry.addedBy = "this browser";
+        list.push(entry); saveLocalGear(list); applyLocalGear(); afterSave(entry);
+      } else {
+        api.post("/api/gear", { entry: entry }).then(function (r) {
+          if (!r.ok) { err(r.error || "Could not save"); return; }
+          api.get("/api/catalog").then(function (c) { state.items = c.items; state.items.forEach(index); state.items.forEach(function (it) { if (it.custom) it._raw = rawFromItem(it); }); applyLocalGear(); afterSave(r.entry); });
+        });
+      }
+    };
+    function afterSave(entry) {
+      refreshCounts(); closeModal(); toast(esc(entry.brand + " " + entry.model) + " added to the hub", "good");
+      if (CAT_VIEWS[state.view] !== undefined || true) { setView(entry.category); $("#q").value = entry.model; state.q = entry.model; $("#search").classList.add("has-text"); renderGrid(); }
+    }
+  }
+  function removeGear(id) {
+    if (!id) return;
+    if (STATIC) { saveLocalGear(localGear().filter(function (g) { return g.id !== id; })); applyLocalGear(); refreshCounts(); closeModal(); renderGrid(); toast("Removed"); return; }
+    api.post("/api/gear/remove", { id: id }).then(function () { return api.get("/api/catalog"); }).then(function (c) { state.items = c.items; state.items.forEach(index); applyLocalGear(); refreshCounts(); closeModal(); renderGrid(); toast("Removed"); });
+  }
+
   // ------------------------------------------------------------------ about / settings
   function renderAbout() {
     var s = (state.system && state.system.stats) || { byCategory: {} };
@@ -1539,8 +1648,9 @@ a.btn:hover, a.opt:hover { text-decoration: none; }
       $("#dl-dir").textContent = res[0].downloadDir; $("#foot-version").textContent = "v" + res[0].version;
       state.items = res[1].items; state.brands = res[1].brands; state.brandColors = res[1].brandColors; state.categories = res[1].categories;
       state.items.forEach(index);
-      var counts = {}; state.items.forEach(function (i) { counts[i.category] = (counts[i.category] || 0) + 1; });
-      $$("[data-count]").forEach(function (p) { p.textContent = counts[p.dataset.count] || 0; });
+      state.items.forEach(function (it) { if (it.custom) it._raw = rawFromItem(it); });
+      applyLocalGear();
+      refreshCounts();
       route();
       startPolling();
     }).catch(function (e) { showFatal(String(e)); });
@@ -1567,6 +1677,7 @@ a.btn:hover, a.opt:hover { text-decoration: none; }
     $("#scrim").onclick = closeDrawer;
     $("#modal-wrap").addEventListener("click", function (e) { if (e.target === $("#modal-wrap")) closeModal(); });
     $("#btn-settings").onclick = openSettings;
+    $$("[data-addgear]").forEach(function (b) { b.onclick = function () { openAddGear(null); }; });
     $("#btn-open-folder").onclick = function () { api.post("/api/open-folder"); };
     $("#btn-clear-jobs").onclick = function () { api.post("/api/jobs/clear").then(function () { startPolling(true); }); };
     document.addEventListener("click", function (e) { var a = e.target.closest("[data-url]"); if (a && !a.href) { e.preventDefault(); openExternal(a.dataset.url); } });

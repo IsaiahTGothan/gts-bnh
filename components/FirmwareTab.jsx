@@ -49,10 +49,11 @@ export default function FirmwareTab() {
       if (e.source !== frame.current?.contentWindow) return;
       const m = e.data || {};
       if (m.type === 'cfh:view' && m.view && m.view !== fwView && FIRMWARE_VIEWS.some((v) => v.id === m.view)) setFwView(m.view);
+      if (m.type === 'cfh:addgear') setAdding(m.item && m.item.id ? (gear.find((g) => g.id === m.item.id.replace(/^team-/, '')) || {}) : {});
     };
     window.addEventListener('message', onMessage);
     return () => window.removeEventListener('message', onMessage);
-  }, [fwView, setFwView]);
+  }, [fwView, setFwView, gear]);
 
   // `/` focuses the hub's search like it does on the other tabs.
   useEffect(() => {
