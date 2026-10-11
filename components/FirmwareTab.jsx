@@ -15,12 +15,12 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { FIRMWARE_VIEWS } from '../lib/constants';
 import { relTime } from '../lib/utils';
+import { BRANDS, BRAND_COLORS, DEFAULT_BRAND_COLOR } from '../lib/brand-colors';
 import { useStore } from './GTSApp';
 import { Btn, Field, Icon, Input, Modal, Select, Textarea } from './ui';
 
 const HUB_SRC = '/firmware/index.html';
 const CATEGORIES = [['camera', 'Camera'], ['lens', 'Lens'], ['flash', 'Flash / light'], ['accessory', 'Accessory']];
-const BRANDS = ['Panasonic', 'Sony', 'Canon', 'Nikon', 'Fujifilm', 'OM System', 'Leica', 'Sigma', 'Tamron', 'Godox', 'Profoto', 'DJI', 'GoPro', 'Insta360', 'Blackmagic Design', 'Ricoh', 'Hasselblad', 'Viltrox', 'Samyang', 'Aputure', 'Nanlite', 'Westcott', 'Atomos', 'RØDE', 'Other'];
 const MAX_FILE_MB = 1500;
 
 export default function FirmwareTab() {
@@ -188,8 +188,7 @@ function GearModal({ initial, passcode, onSave, onClose }) {
             <Select value={d.category} onChange={(e) => set('category', e.target.value)}>{CATEGORIES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</Select>
           </Field>
           <Field label="Brand" required>
-            <Input list="fw-brands" value={d.brand} onChange={(e) => set('brand', e.target.value)} placeholder="Panasonic" />
-            <datalist id="fw-brands">{BRANDS.map((b) => <option key={b} value={b} />)}</datalist>
+            <BrandPicker value={d.brand} onChange={(b) => set('brand', b)} />
           </Field>
           <Field label="Model" required hint="As the customer says it: Lumix S1R II, a7 IV, EOS R6 Mark II">
             <Input value={d.model} onChange={(e) => set('model', e.target.value)} placeholder="Lumix S1R II" autoFocus />
@@ -232,5 +231,46 @@ function GearModal({ initial, passcode, onSave, onClose }) {
         {err && <div className="field-error">{err}</div>}
       </form>
     </Modal>
+  );
+}
+
+// ─── Custom brand dropdown (colour dot per brand, type to filter, add a new brand) ───
+function BrandPicker({ value, onChange }) {
+  const [open, setOpen] = useState(false);
+  const [q, setQ] = useState('');
+  const box = useRef(null);
+  const colorOf = (b) => BRAND_COLORS[b] || DEFAULT_BRAND_COLOR;
+  useEffect(() => {
+    if (!open) return undefined;
+    const h = (e) => { if (box.current && !box.current.contains(e.target)) setOpen(false); };
+    document.addEventListener('mousedown', h);
+    return () => document.removeEventListener('mousedown', h);
+  }, [open]);
+  const list = BRANDS.filter((b) => !q || b.toLowerCase().includes(q.toLowerCase()));
+  const custom = q.trim() && !BRANDS.some((b) => b.toLowerCase() === q.trim().toLowerCase());
+  const pick = (b) => { onChange(b); setOpen(false); setQ(''); };
+  return (
+    <div className="bp" ref={box}>
+      <button type="button" className={`bp-btn ${open ? 'is-open' : ''}`} onClick={() => setOpen((o) => !o)} aria-haspopup="listbox" aria-expanded={open}>
+        <span className="bp-dot" style={{ '--c': colorOf(value) }} />
+        <span className="bp-label">{value || <span className="muted">Pick a brand…</span>}</span>
+        <Icon name="chevron-down" size={14} className="bp-caret" />
+      </button>
+      {open && (
+        <div className="bp-menu" role="listbox">
+          <input className="bp-search" autoFocus placeholder="Type to filter or add a brand" value={q} onChange={(e) => setQ(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); if (list[0]) pick(list[0]); else if (custom) pick(q.trim()); } if (e.key === 'Escape') setOpen(false); }} />
+          <div className="bp-list">
+            {list.map((b) => (
+              <button type="button" key={b} role="option" aria-selected={b === value} className={`bp-item ${b === value ? 'is-sel' : ''}`} onClick={() => pick(b)}>
+                <span className="bp-dot" style={{ '--c': colorOf(b) }} />{b}
+              </button>
+            ))}
+            {custom && <button type="button" className="bp-item is-new" onClick={() => pick(q.trim())}><span className="bp-dot" style={{ '--c': DEFAULT_BRAND_COLOR }} />Add “{q.trim()}” as a new brand</button>}
+            {!list.length && !custom && <div className="muted" style={{ padding: '8px 12px', fontSize: 12.5 }}>No brand matches</div>}
+          </div>
+        </div>
+      )}
+    </div>
   );
 }

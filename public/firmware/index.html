@@ -371,6 +371,7 @@ footer a.zays { display: inline-flex; align-items: center; gap: 6px; font-weight
 /* ---------- web edition (static hosting) ---------- */
 .web-only { display: none; }
 .static .web-only { display: block; }
+.edition.web-only { display: none; }
 .static .edition.web-only { display: inline-block; }
 .static .desktop-only { display: none !important; }
 .static nav.tabs button[data-view="downloads"] { display: none; }
@@ -396,6 +397,24 @@ a.btn:hover, a.opt:hover { text-decoration: none; }
 .g-drop:hover, .g-drop.is-drag { border-color: var(--accent); background: rgba(227,168,92,.08); color: var(--text); }
 .g-drop svg { width: 16px; height: 16px; }
 .embed [data-addgear].btn.ghost { display: none; }
+
+/* custom brand dropdown */
+.bp-btn { width: 100%; display: flex; align-items: center; gap: 10px; background: var(--panel); border: 1px solid var(--line-2); color: var(--text); border-radius: 10px; padding: 8px 10px; cursor: pointer; text-align: left; transition: border-color .2s; }
+.bp-btn:hover, .bp-btn.is-open { border-color: var(--accent); }
+.bp-dot { width: 11px; height: 11px; border-radius: 50%; background: var(--c); box-shadow: 0 0 10px var(--c); flex: none; }
+.bp-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bp-caret { color: var(--faint); display: inline-flex; transition: transform .2s; }
+.bp-caret svg { width: 14px; height: 14px; }
+.bp-btn.is-open .bp-caret { transform: rotate(180deg); }
+#g-brandpick { position: relative; }
+.bp-menu { position: absolute; left: 0; right: 0; top: calc(100% + 6px); z-index: 20; background: var(--bg-2); border: 1px solid var(--line-2); border-radius: 14px; box-shadow: var(--shadow); overflow: hidden; animation: pop .18s var(--ease) both; }
+.bp-search { width: 100%; box-sizing: border-box; background: var(--panel); border: 0; border-bottom: 1px solid var(--line); color: var(--text); padding: 10px 12px; outline: 0; font: inherit; }
+.bp-list { max-height: 260px; overflow-y: auto; padding: 6px; display: grid; grid-template-columns: 1fr 1fr; gap: 2px; }
+.bp-item { display: flex; align-items: center; gap: 9px; padding: 8px 10px; border-radius: 9px; background: transparent; border: 0; color: var(--text); cursor: pointer; text-align: left; font-size: 13.5px; transition: background .15s; }
+.bp-item:hover { background: var(--panel-2); }
+.bp-item.is-sel { background: rgba(227,168,92,.14); color: var(--accent); }
+.bp-item.is-new { grid-column: 1 / -1; color: var(--accent); border-top: 1px solid var(--line); border-radius: 0; margin-top: 4px; }
+@media (max-width: 520px) { .bp-list { grid-template-columns: 1fr; } }
 
 </style>
 
@@ -1546,7 +1565,7 @@ a.btn:hover, a.opt:hover { text-decoration: none; }
     modal(mhead(existing ? "Edit " + esc(d.brand + " " + d.model) : "Add gear to the hub", STATIC ? "Saved in this browser. Paste the maker's link; files can't be stored on the hosted page." : "Saved to this computer's catalog (data/catalog.user.json). Drop the firmware file to keep it for card copies.") +
       '<div class="mbody"><div class="g-grid">' +
       '<label class="field"><span>Type</span><select id="g-cat">' + GEAR_CATS.map(function (c) { return '<option value="' + c[0] + '"' + (d.category === c[0] ? " selected" : "") + '>' + c[1] + '</option>'; }).join("") + '</select></label>' +
-      '<label class="field"><span>Brand *</span><input type="text" id="g-brand" list="g-brands" value="' + esc(d.brand) + '" placeholder="Panasonic"><datalist id="g-brands">' + brands.map(function (b) { return '<option value="' + esc(b) + '">'; }).join("") + '</datalist></label>' +
+      '<div class="field"><span>Brand *</span><div id="g-brandpick"></div><input type="hidden" id="g-brand" value="' + esc(d.brand) + '"></div>' +
       '<label class="field"><span>Model *</span><input type="text" id="g-model" value="' + esc(d.model) + '" placeholder="Lumix S1R II"></label>' +
       '<label class="field"><span>Firmware version</span><input type="text" id="g-version" value="' + esc(d.version) + '" placeholder="Ver.1.5"></label>' +
       '<label class="field"><span>Released</span><input type="date" id="g-date" value="' + esc(d.date || "") + '"></label>' +
@@ -1562,6 +1581,7 @@ a.btn:hover, a.opt:hover { text-decoration: none; }
       (mine.length ? '<div class="section" style="margin-top:14px"><h4>Added here (' + mine.length + ')</h4><div class="dl-list">' + mine.map(function (g) { return '<div class="dl-row"><span class="os">' + I.card + '</span><div class="t"><b>' + esc((g.brand || "") + " " + (g.model || "")) + '</b><span>' + esc(g.version ? "fw " + g.version : "") + '</span></div><button class="btn sm g-edit" data-id="' + esc(g.id || "") + '">Edit</button></div>'; }).join("") + '</div></div>' : "") +
       '</div>');
     $$(".close", $("#modal")).forEach(function (b) { b.onclick = closeModal; });
+    brandPicker($("#g-brandpick"), $("#g-brand"), brands);
     var files = (d.files || []).slice();
     var drop = $("#g-drop"), fileInput = $("#g-file");
     function err(msg) { var e = $("#g-err"); e.textContent = msg; e.classList.toggle("hidden", !msg); }
@@ -1602,6 +1622,30 @@ a.btn:hover, a.opt:hover { text-decoration: none; }
       refreshCounts(); closeModal(); toast(esc(entry.brand + " " + entry.model) + " added to the hub", "good");
       if (CAT_VIEWS[state.view] !== undefined || true) { setView(entry.category); $("#q").value = entry.model; state.q = entry.model; $("#search").classList.add("has-text"); renderGrid(); }
     }
+  }
+  // Custom brand dropdown: colour dot per brand, type-to-filter, "new brand" row for anything not listed.
+  function brandPicker(mount, hidden, brands) {
+    var open = false, filter = "";
+    function colorOf(b) { return state.brandColors[b] || "#d9a066"; }
+    function render() {
+      var v = hidden.value;
+      var list = brands.filter(function (b) { return !filter || b.toLowerCase().indexOf(filter.toLowerCase()) >= 0; });
+      var custom = filter && !brands.some(function (b) { return b.toLowerCase() === filter.toLowerCase(); });
+      mount.innerHTML = '<button type="button" class="bp-btn' + (open ? " is-open" : "") + '"><span class="bp-dot" style="--c:' + esc(colorOf(v)) + '"></span><span class="bp-label">' + (v ? esc(v) : '<span class="muted">Pick a brand…</span>') + '</span><span class="bp-caret">' + I.x.replace("M6 6l12 12M18 6 6 18", "m6 9 6 6 6-6") + '</span></button>' +
+        (open ? '<div class="bp-menu"><input type="text" class="bp-search" placeholder="Type to filter or add a brand" value="' + esc(filter) + '"><div class="bp-list">' +
+          list.map(function (b) { return '<button type="button" class="bp-item' + (b === v ? " is-sel" : "") + '" data-b="' + esc(b) + '"><span class="bp-dot" style="--c:' + esc(colorOf(b)) + '"></span>' + esc(b) + '</button>'; }).join("") +
+          (custom ? '<button type="button" class="bp-item is-new" data-b="' + esc(filter) + '"><span class="bp-dot" style="--c:#d9a066"></span>Add “' + esc(filter) + '” as a new brand</button>' : "") +
+          (!list.length && !custom ? '<div class="muted small" style="padding:8px 12px">No brand matches</div>' : "") + '</div></div>' : "");
+      $(".bp-btn", mount).onclick = function () { open = !open; filter = ""; render(); if (open) { var i = $(".bp-search", mount); i.focus(); } };
+      var si = $(".bp-search", mount);
+      if (si) {
+        si.oninput = function () { filter = si.value; var pos = si.selectionStart; render(); var n = $(".bp-search", mount); n.focus(); n.setSelectionRange(pos, pos); };
+        si.onkeydown = function (e) { if (e.key === "Enter") { e.preventDefault(); var first = $(".bp-item", mount); if (first) first.click(); } if (e.key === "Escape") { open = false; render(); } };
+      }
+      $$(".bp-item", mount).forEach(function (b) { b.onclick = function () { hidden.value = b.dataset.b; open = false; filter = ""; render(); }; });
+    }
+    document.addEventListener("mousedown", function (e) { if (open && !mount.contains(e.target)) { open = false; render(); } });
+    render();
   }
   function removeGear(id) {
     if (!id) return;
