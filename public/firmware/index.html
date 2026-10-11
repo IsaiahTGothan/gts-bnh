@@ -416,6 +416,17 @@ a.btn:hover, a.opt:hover { text-decoration: none; }
 .bp-item.is-new { grid-column: 1 / -1; color: var(--accent); border-top: 1px solid var(--line); border-radius: 0; margin-top: 4px; }
 @media (max-width: 520px) { .bp-list { grid-template-columns: 1fr; } }
 
+/* main-screen dropdowns */
+.filters .dd { position: relative; min-width: 240px; }
+.filters .dd-sort { min-width: 200px; }
+.filters .dd .bp-btn { padding: 7px 10px; }
+.bp-count { font-size: 11px; color: var(--faint); background: var(--panel-3); border: 1px solid var(--line); border-radius: 999px; padding: 0 7px; margin-left: 6px; font-variant-numeric: tabular-nums; }
+.bp-item.is-sel .bp-count { color: var(--accent); }
+.bp-menu.is-wide { min-width: 420px; }
+.bp-list.one { grid-template-columns: 1fr; }
+.bp-item .grow { flex: 1; min-width: 0; }
+@media (max-width: 600px) { .bp-menu.is-wide { min-width: 0; } .filters .dd { min-width: 0; flex: 1; } }
+
 </style>
 
 <div class="backdrop"><div class="blob b1"></div><div class="blob b2"></div><div class="blob b3"></div><div class="grain"></div></div>
@@ -466,9 +477,7 @@ a.btn:hover, a.opt:hover { text-decoration: none; }
       </div>
     </div>
     <div class="filters" id="brand-filters"></div>
-    <div class="result-meta"><span id="result-count"></span><span class="spacer"></span>
-      <label class="small muted">Sort <select id="sort"><option value="brand">Brand · Model</option><option value="model">Model A–Z</option><option value="price">Price (low → high)</option><option value="newest">Newest firmware</option></select></label>
-    </div>
+    <div class="result-meta"><span id="result-count"></span></div>
     <div class="grid" id="grid"></div>
     <div class="row" style="justify-content:center;margin:6px 0 2px"><button class="btn sm ghost" data-addgear>+ Missing a model? Add gear</button></div>
     <div class="empty-state hidden" id="empty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><div>No matches. Try the model code (ILCE-7M4, R6M2, Z6III) or just the brand.</div></div>
@@ -1139,16 +1148,49 @@ a.btn:hover, a.opt:hover { text-decoration: none; }
   }
 
   // ------------------------------------------------------------------ catalog rendering
+  // Generic custom dropdown: [{value,label,color,count}] with optional type-to-filter.
+  function dropdown(mount, opts) {
+    var open = false, filter = "";
+    function cur() { return opts.options().filter(function (o) { return o.value === opts.value(); })[0] || opts.options()[0]; }
+    function render() {
+      var c = cur(), all = opts.options();
+      var list = all.filter(function (o) { return !filter || o.label.toLowerCase().indexOf(filter.toLowerCase()) >= 0; });
+      mount.innerHTML = '<button type="button" class="bp-btn' + (open ? " is-open" : "") + '">' + (opts.prefix ? '<span class="bp-prefix">' + opts.prefix + '</span>' : "") + (c.color ? '<span class="bp-dot" style="--c:' + esc(c.color) + '"></span>' : "") + '<span class="bp-label">' + esc(c.label) + '</span>' + (c.count != null ? '<span class="bp-count">' + c.count + '</span>' : "") + '<span class="bp-caret">' + I.x.replace("M6 6l12 12M18 6 6 18", "m6 9 6 6 6-6") + '</span></button>' +
+        (open ? '<div class="bp-menu' + (opts.wide ? " is-wide" : "") + '">' + (opts.search ? '<input type="text" class="bp-search" placeholder="' + esc(opts.search) + '" value="' + esc(filter) + '">' : "") + '<div class="bp-list' + (opts.columns === 1 ? " one" : "") + '">' +
+          list.map(function (o) { return '<button type="button" class="bp-item' + (o.value === c.value ? " is-sel" : "") + '" data-v="' + esc(o.value) + '">' + (o.color ? '<span class="bp-dot" style="--c:' + esc(o.color) + '"></span>' : "") + '<span class="grow">' + esc(o.label) + '</span>' + (o.count != null ? '<span class="bp-count">' + o.count + '</span>' : "") + '</button>'; }).join("") +
+          (!list.length ? '<div class="muted small" style="padding:8px 12px">No match</div>' : "") + '</div></div>' : "");
+      $(".bp-btn", mount).onclick = function () { open = !open; filter = ""; render(); var i = $(".bp-search", mount); if (i) i.focus(); };
+      var si = $(".bp-search", mount);
+      if (si) {
+        si.oninput = function () { filter = si.value; var pos = si.selectionStart; render(); var n = $(".bp-search", mount); n.focus(); n.setSelectionRange(pos, pos); };
+        si.onkeydown = function (e) { if (e.key === "Enter") { e.preventDefault(); var f = $(".bp-item", mount); if (f) f.click(); } if (e.key === "Escape") { open = false; render(); } };
+      }
+      $$(".bp-item", mount).forEach(function (b) { b.onclick = function () { open = false; filter = ""; opts.onChange(b.dataset.v); render(); }; });
+    }
+    if (!mount._dd) { document.addEventListener("mousedown", function (e) { if (open && !mount.contains(e.target)) { open = false; render(); } }); mount._dd = true; }
+    render();
+    return { render: render };
+  }
+  var SORTS = [["brand", "Brand · Model"], ["model", "Model A–Z"], ["price", "Price (low → high)"], ["newest", "Newest firmware"]];
   function renderBrandChips() {
     var counts = {};
     state.items.forEach(function (it) { if (it.category === state.category) counts[it.brand] = (counts[it.brand] || 0) + 1; });
     var brands = Object.keys(counts).sort(function (a, b) { return counts[b] - counts[a] || a.localeCompare(b); });
-    var html = '<span class="label">Brands</span><button class="chip ' + (state.brand ? "" : "active") + '" data-brand=""><span class="dot" style="--c:var(--accent)"></span>All <span class="n">' + Object.keys(counts).reduce(function (a, k) { return a + counts[k]; }, 0) + '</span></button>';
-    brands.forEach(function (b) {
-      html += '<button class="chip ' + (state.brand === b ? "active" : "") + '" data-brand="' + esc(b) + '" style="--c:' + esc(state.brandColors[b] || "#e3a85c") + '"><span class="dot"></span>' + esc(b) + ' <span class="n">' + counts[b] + '</span></button>';
+    var total = brands.reduce(function (a, k) { return a + counts[k]; }, 0);
+    var host = $("#brand-filters");
+    if (!$("#dd-brand", host)) host.innerHTML = '<span class="label">Brand</span><div class="dd" id="dd-brand"></div><span class="label" style="margin-left:14px">Sort</span><div class="dd dd-sort" id="dd-sort"></div>';
+    dropdown($("#dd-brand", host), {
+      prefix: null, search: "Type to filter brands", wide: true,
+      options: function () { return [{ value: "", label: "All brands", color: "#e3a85c", count: total }].concat(brands.map(function (b) { return { value: b, label: b, color: state.brandColors[b] || "#e3a85c", count: counts[b] }; })); },
+      value: function () { return state.brand || ""; },
+      onChange: function (v) { state.brand = v || null; renderBrandChips(); renderGrid(); }
     });
-    $("#brand-filters").innerHTML = html;
-    $$("#brand-filters .chip").forEach(function (c) { c.addEventListener("click", function () { state.brand = c.dataset.brand || null; renderBrandChips(); renderGrid(); }); });
+    dropdown($("#dd-sort", host), {
+      columns: 1,
+      options: function () { return SORTS.map(function (x) { return { value: x[0], label: x[1] }; }); },
+      value: function () { return state.sort; },
+      onChange: function (v) { state.sort = v; renderGrid(); }
+    });
   }
   var io = new IntersectionObserver(function (entries) { entries.forEach(function (e) { if (e.isIntersecting) { e.target.classList.add("in"); io.unobserve(e.target); } }); }, { rootMargin: "60px" });
   function sortItems(list) {
@@ -1717,7 +1759,7 @@ a.btn:hover, a.opt:hover { text-decoration: none; }
     q.addEventListener("blur", function () { setTimeout(closeSuggest, 120); });
     q.addEventListener("focus", function () { if (state.q) renderSuggest(); });
     $("#q-clear").onclick = function () { q.value = ""; state.q = ""; $("#search").classList.remove("has-text"); renderGrid(); q.focus(); };
-    $("#sort").onchange = function () { state.sort = $("#sort").value; renderGrid(); };
+
     $("#scrim").onclick = closeDrawer;
     $("#modal-wrap").addEventListener("click", function (e) { if (e.target === $("#modal-wrap")) closeModal(); });
     $("#btn-settings").onclick = openSettings;
