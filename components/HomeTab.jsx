@@ -510,7 +510,17 @@ function TeamSyncPanel({ sync, settings: s, set, toast, sfx, confirm }) {
                 </div>
               </div>
             )}
-            {!sync.needsTable && <div className="row" style={{ gap: 8, paddingBottom: 8 }}><Btn size="sm" icon="refresh" onClick={sync.run} loading={sync.busy}>Retry</Btn></div>}
+            {!sync.needsTable && (
+              <div className="row wrap" style={{ gap: 8, paddingBottom: 8 }}>
+                <Btn size="sm" icon="refresh" onClick={sync.run} loading={sync.busy}>Retry</Btn>
+                {(sync.errorCode === 'unreachable' || sync.errorCode === 'paused') && (
+                  <>
+                    <a className="btn btn-sm" href="https://supabase.com/dashboard/projects" target="_blank" rel="noopener">Open Supabase (restore project)</a>
+                    <a className="btn btn-sm" href="https://vercel.com/dashboard" target="_blank" rel="noopener">Open Vercel</a>
+                  </>
+                )}
+              </div>
+            )}
           </>
         )}
 

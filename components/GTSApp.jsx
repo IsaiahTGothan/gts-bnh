@@ -7,7 +7,7 @@
 //  shortcuts. Tabs live in their own files.
 // ═══════════════════════════════════════════════════════════════════════════
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { APP_MAJOR, APP_VERSION, ASG_STATUS_BY_ID, MOBILE_TABS, TABS, TECHS, TECH_BY_ID, TECH_COLORS, initialsOf, isTerminal, serviceLabel, syncTeam, techName } from '../lib/constants';
+import { APP_MAJOR, APP_VERSION, ASG_STATUS_BY_ID, FIRMWARE_VIEWS, MOBILE_TABS, TABS, TECHS, TECH_BY_ID, TECH_COLORS, initialsOf, isTerminal, serviceLabel, syncTeam, techName } from '../lib/constants';
 import { goalInfo } from '../lib/stats';
 import { connectionsStatus } from '../lib/salesforce';
 import { buildDemoData, checkOn, defaultState, exportJSON, loadState, mergeStates, migrate, parseImport, saveState, sharedSignature } from '../lib/store';
@@ -25,6 +25,7 @@ import SalesforceTab from './SalesforceTab';
 import AssignmentsTab from './AssignmentsTab';
 import CatalogTab from './CatalogTab';
 import StationTab from './StationTab';
+import FirmwareTab from './FirmwareTab';
 import { AssignmentDrawer, AssignmentForm, TicketForm } from './assignment-views';
 
 // ─── Context ───────────────────────────────────────────────────────────────
@@ -307,7 +308,7 @@ function tabSessionId() {
   } catch { return 'tab'; }
 }
 
-const SYNC_INITIAL = { status: 'probing', busy: false, live: false, online: [], lastAt: null, error: null, needsTable: false, sql: null, rev: 0, realtime: null, lastPing: null };
+const SYNC_INITIAL = { status: 'probing', busy: false, live: false, online: [], lastAt: null, error: null, errorCode: null, needsTable: false, sql: null, rev: 0, realtime: null, lastPing: null };
 
 function useTeamSync(state, api, toast) {
   const [sync, setSync] = useState(SYNC_INITIAL);
@@ -340,7 +341,7 @@ function useTeamSync(state, api, toast) {
       if (res.locked) { disconnect('locked', { status: 'locked', error: passcode ? res.error : null }); return; }
       if (res.error) {
         if (ref.current.mode !== 'connected') ref.current.mode = 'error';
-        patch({ status: 'error', error: res.error, needsTable: !!res.needsTable, sql: res.sql || null });
+        patch({ status: 'error', error: res.error, errorCode: res.code || null, needsTable: !!res.needsTable, sql: res.sql || null });
         return;
       }
       ref.current.mode = 'connected';
@@ -481,6 +482,7 @@ export default function GTSApp() {
   const [leaving, setLeaving] = useState(false);
   const [tab, setTab] = useState('home');
   const [homeTab, setHomeTab] = useState('overview');
+  const [fwView, setFwView] = useState('camera');   // Firmware page section (rail dropdown)
   const [modal, setModal] = useState(null);       // { type, props }
   const [drawerId, setDrawerId] = useState(null); // assignment id
   const [palette, setPalette] = useState(false);
@@ -519,7 +521,14 @@ export default function GTSApp() {
   const sfx = useCallback((name) => play(name, state?.settings.sounds), [state?.settings.sounds]);
 
   // ── navigation helpers ───────────────────────────────────────────────
-  const goTo = useCallback((t, sub) => { setTab(t); if (t === 'home' && sub) setHomeTab(sub); window.scrollTo({ top: 0, behavior: 'smooth' }); }, []);
+  const goTo = useCallback((t, sub) => { setTab(t); if (t === 'home' && sub) setHomeTab(sub); if (t === 'firmware' && sub) setFwView(sub); window.scrollTo({ top: 0, behavior: 'smooth' }); }, []);
+
+  // The Firmware page lives in its own world: the whole shell eases into the hub's brown palette.
+  useEffect(() => {
+    const root = document.documentElement;
+    if (tab === 'firmware') root.setAttribute('data-zone', 'firmware'); else root.removeAttribute('data-zone');
+    return () => root.removeAttribute('data-zone');
+  }, [tab]);
   const openAssignment = useCallback((id) => { setDrawerId(id); sfx('open'); }, [sfx]);
   const openTicket = useCallback((id) => { setTab('salesforce'); setHighlight({ type: 'ticket', id }); setTimeout(() => setHighlight(null), 2500); }, []);
   const openInventory = useCallback((id) => { setTab('station'); setHighlight({ type: 'inventory', id }); setTimeout(() => setHighlight(null), 2500); }, []);
@@ -578,12 +587,12 @@ export default function GTSApp() {
 
   const ctx = useMemo(() => ({
     state, api, now, toast, sfx, sync, connections, goal, isManager,
-    tab, goTo, homeTab, setHomeTab,
+    tab, goTo, homeTab, setHomeTab, fwView, setFwView,
     openAssignment, openTicket, openInventory, openRef, newAssignment, newTicket, confirm, highlight, openUnixScan,
     openPalette: () => setPalette(true), openShortcuts: () => setModal({ type: 'shortcuts' }), openAbout: () => setModal({ type: 'about' }),
     openWhatsNew: () => setModal({ type: 'whatsnew' }), openTechPicker: () => setModal({ type: 'tech' }), openMore: () => setModal({ type: 'more' }),
     counts,
-  }), [state, api, now, toast, sfx, sync, connections, goal, isManager, tab, goTo, homeTab, openAssignment, openTicket, openInventory, openRef, newAssignment, newTicket, confirm, highlight, openUnixScan, counts]);
+  }), [state, api, now, toast, sfx, sync, connections, goal, isManager, tab, goTo, homeTab, fwView, openAssignment, openTicket, openInventory, openRef, newAssignment, newTicket, confirm, highlight, openUnixScan, counts]);
 
   // ── server / pre-hydration render ────────────────────────────────────
   if (!state || booting) return <BootSplash leaving={leaving} />;
@@ -609,6 +618,7 @@ export default function GTSApp() {
               {tab === 'stats' && <StatsTab />}
               {tab === 'catalog' && <CatalogTab />}
               {tab === 'station' && <StationTab />}
+              {tab === 'firmware' && <FirmwareTab />}
               {tab === 'management' && <ManagementTab />}
             </div>
           </main>
@@ -697,8 +707,10 @@ function Clock({ compact }) {
 }
 
 function Rail({ tech }) {
-  const { state, api, tab, goTo, counts, sync, isManager, openTechPicker, openAbout } = useStore();
+  const { state, api, tab, goTo, counts, sync, isManager, openTechPicker, openAbout, fwView } = useStore();
   const collapsed = !!state.settings.railCollapsed;
+  const [fwOpen, setFwOpen] = useState(false);
+  const fwExpanded = tab === 'firmware' || fwOpen;
   const badge = (id) => (id === 'home' && counts.alerts) || (id === 'salesforce' && counts.openTickets) || (id === 'assignments' && counts.activeAsg) || (id === 'station' && counts.outItems) || (id === 'management' && counts.broadcasts) || 0;
   return (
     <aside className="rail" aria-label="Navigation">
@@ -714,13 +726,29 @@ function Rail({ tech }) {
           const n = badge(t.id);
           const locked = t.manager && !isManager;
           return (
-            <button key={t.id} className={`rail-item ${tab === t.id ? 'is-active' : ''} ${t.manager ? 'is-manager' : ''}`} onClick={() => goTo(t.id, t.id === 'home' ? 'overview' : undefined)} title={collapsed ? `${t.label} · ${t.key}` : t.hint}>
-              <span className="rail-icon"><Icon name={t.icon} size={18} /></span>
-              <span className="rail-label">{t.label}</span>
-              {n > 0 && <span className={`badge ${t.id === 'home' ? '' : t.id === 'management' ? 'is-accent' : 'is-neutral'}`}>{n}</span>}
-              {locked && n === 0 && <Icon name="lock" size={12} className="rail-lock" />}
-              <span className="rail-key">{t.key}</span>
-            </button>
+            <React.Fragment key={t.id}>
+              <button className={`rail-item ${tab === t.id ? 'is-active' : ''} ${t.manager ? 'is-manager' : ''} ${t.id === 'firmware' ? 'is-firmware' : ''}`} onClick={() => goTo(t.id, t.id === 'home' ? 'overview' : undefined)} title={collapsed ? `${t.label} · ${t.key}` : t.hint}>
+                <span className="rail-icon"><Icon name={t.icon} size={18} /></span>
+                <span className="rail-label">{t.label}</span>
+                {n > 0 && <span className={`badge ${t.id === 'home' ? '' : t.id === 'management' ? 'is-accent' : 'is-neutral'}`}>{n}</span>}
+                {locked && n === 0 && <Icon name="lock" size={12} className="rail-lock" />}
+                {t.id === 'firmware' ? (
+                  <span role="button" tabIndex={0} className={`rail-caret ${fwExpanded ? 'is-open' : ''}`} title={fwExpanded ? 'Hide sections' : 'Show sections'}
+                    onClick={(e) => { e.stopPropagation(); setFwOpen((o) => !o); }} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); setFwOpen((o) => !o); } }}>
+                    <Icon name="chevron-down" size={13} />
+                  </span>
+                ) : <span className="rail-key">{t.key}</span>}
+              </button>
+              {t.id === 'firmware' && fwExpanded && !collapsed && (
+                <div className="rail-sub" role="group" aria-label="Firmware sections">
+                  {FIRMWARE_VIEWS.map((v) => (
+                    <button key={v.id} className={`rail-subitem ${tab === 'firmware' && fwView === v.id ? 'is-active' : ''}`} onClick={() => goTo('firmware', v.id)} title={v.hint}>
+                      <span className="rail-subdot" />{v.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </React.Fragment>
           );
         })}
       </nav>

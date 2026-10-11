@@ -76,6 +76,9 @@ The 17-area / 124-type GTS service catalog, searchable, with scope + “done whe
 ### Station
 Inventory (serialized assets, counted pools, consumables with low-stock alerts; check out / check in / quarantine) and the shift handoff sheet.
 
+### Firmware (Update / Install Firmware)
+The **Camera Firmware Hub** (made for B&H by ZAYS.us) embedded as its own page: search 439 cameras, lenses, flashes and accessories by name or model code, see the latest firmware with install steps, download the file or jump to the official page, plus the Windows ISO guide. Sections (Cameras · Lenses · Flashes & Lighting · Accessories · Windows ISO · About) are a dropdown under *Firmware* in the rail and chips above the page; `8` opens it. The shell eases into the hub's espresso palette while it is open. The hub itself lives in `public/firmware/` and is built from the Camera Firmware Hub project (`python3 tools/build_web.py --gts <this repo>`).
+
 ### Management
 Team · Alerts · Daily goal · Manager PIN · Connections · Exports. Managers see it in the rail; once a PIN is set, techs get a lock screen. The PIN unlock is remembered per device (lock it again from the tab).
 
@@ -90,6 +93,8 @@ Without a database the app runs in **local mode** (each browser keeps its own re
 1. Vercel → project → **Storage** → **Create Database** → **Supabase**. Vercel injects `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY` and `POSTGRES_URL` automatically. Redeploy.
 2. First device: **Settings → Team sync → Create the team passcode**. The table is created automatically on first contact.
 3. Everyone else: Settings → Team sync → type the passcode → *Connect*. The rail dot turns green and says **LIVE**.
+
+**If sync stops with "Team database unreachable"**: the free Supabase project pauses after 7 idle days (or was deleted). Open supabase.com → the project → *Restore*, then Settings → Team sync → *Retry*. From V3.1 a Vercel cron (`vercel.json`) hits `/api/keepalive` every day so the project stays awake; set `CRON_SECRET` in Vercel to lock that route down. The error text now says what is wrong (unreachable / paused / key rejected) instead of "fetch failed".
 
 How it works: one JSON document with a revision counter in the `gts_sync` table; writes are compare-and-set; conflicts merge record by record (newest `updatedAt` wins, deletions are tombstoned, merges are canonical so devices converge); every write fires a Supabase Realtime broadcast so open devices pull immediately; presence on the same channel powers the online avatars. The team roster, alerts and management settings (goal, PIN hash) are part of the shared document. Your tech, theme, sounds and passcode never leave the device.
 
@@ -153,6 +158,7 @@ app/
   layout.jsx · page.jsx · globals.css · icon.svg · manifest.js
   api/sync/route.js         team sync API (Supabase: CAS document + realtime ping + passcode)
   api/salesforce/route.js   Salesforce status / test / create Case (passcode-gated)
+  api/keepalive/route.js    daily cron ping (vercel.json) so the Supabase project never pauses
 components/
   GTSApp.jsx           store, persistence, sync loop + live channel, shell (rail, strip, alerts), overlays, shortcuts
   HomeTab.jsx          overview · activity · settings
@@ -161,6 +167,7 @@ components/
   StatsTab.jsx         every number on one page
   ManagementTab.jsx    team · alerts · goal · PIN · connections · exports
   UnixScan.jsx         Code 128 barcode modal + scanner self-test
+  FirmwareTab.jsx      Camera Firmware Hub embedded from public/firmware (brown zone, dropdown sections)
   CatalogTab.jsx · StationTab.jsx · assignment-views.jsx
   ui.jsx               icons, logos, buttons, panels, forms, charts (HoverChart, Heatmap, Ring, SplitBar)
 lib/

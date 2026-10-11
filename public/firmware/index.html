@@ -1,0 +1,1528 @@
+<!doctype html>
+<html lang="en" data-accent="espresso">
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta charset="utf-8">
+<title>Camera Firmware Hub</title>
+<style>
+/* Camera Firmware Hub — "Espresso" dark-brown theme. Made for B&H · Created by ZAYS.us */
+:root {
+  --bg: #120c09;
+  --bg-2: #1b130e;
+  --panel: #231913;
+  --panel-2: #2c2018;
+  --panel-3: #362a20;
+  --line: #3f2f24;
+  --line-2: #55402f;
+  --text: #f4eadc;
+  --muted: #b99e86;
+  --faint: #7f6753;
+  --accent: #e3a85c;
+  --accent-2: #c9743c;
+  --accent-ink: #1a1008;
+  --good: #7fd8a4;
+  --warn: #f2c66d;
+  --bad: #ff7a7a;
+  --info: #8fc7ff;
+  --radius: 16px;
+  --radius-sm: 10px;
+  --shadow: 0 20px 50px rgba(0,0,0,.45), 0 2px 6px rgba(0,0,0,.35);
+  --font: "Inter", "SF Pro Text", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --display: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Palatino, Georgia, serif;
+  --ease: cubic-bezier(.22,.8,.26,1);
+  color-scheme: dark;
+}
+:root[data-accent="mocha"] { --accent: #e7a28a; --accent-2: #b8654a; --bg: #140c0b; --bg-2: #1e1311; --panel: #271917; --panel-2: #32211e; --panel-3: #3c2a26; --line: #46302c; --line-2: #5c4039; }
+:root[data-accent="walnut"] { --accent: #d6b25e; --accent-2: #9d7a2e; --bg: #110e08; --bg-2: #1a150c; --panel: #221c10; --panel-2: #2d2516; --panel-3: #382e1c; --line: #43371f; --line-2: #5a4a2a; }
+
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  margin: 0; background: var(--bg); color: var(--text); font-family: var(--font); font-size: 15px; line-height: 1.5;
+  -webkit-font-smoothing: antialiased; overflow-x: hidden;
+}
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+button { font: inherit; }
+::selection { background: rgba(227,168,92,.35); }
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb { background: var(--line-2); border-radius: 8px; border: 2px solid var(--bg); }
+::-webkit-scrollbar-track { background: transparent; }
+
+/* ---------- animated backdrop ---------- */
+.backdrop { position: fixed; inset: 0; z-index: -1; overflow: hidden; background: radial-gradient(1200px 700px at 10% -10%, #2c1a10 0%, transparent 60%), radial-gradient(900px 600px at 110% 10%, #33200f 0%, transparent 55%), var(--bg); }
+.backdrop .blob { position: absolute; border-radius: 50%; filter: blur(70px); opacity: .55; mix-blend-mode: screen; animation: drift 26s var(--ease) infinite alternate; }
+.backdrop .b1 { width: 520px; height: 520px; left: -120px; top: 10%; background: #4a2a14; }
+.backdrop .b2 { width: 620px; height: 620px; right: -200px; top: 30%; background: #3a2412; animation-duration: 34s; animation-delay: -8s; }
+.backdrop .b3 { width: 420px; height: 420px; left: 40%; bottom: -200px; background: #5a3416; animation-duration: 30s; animation-delay: -16s; }
+.backdrop .grain { position: absolute; inset: 0; opacity: .07; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E"); }
+@keyframes drift { 0% { transform: translate(0,0) scale(1); } 50% { transform: translate(60px,-40px) scale(1.12); } 100% { transform: translate(-40px,50px) scale(.95); } }
+@media (prefers-reduced-motion: reduce) { .backdrop .blob { animation: none; } * { transition-duration: .01ms !important; animation-duration: .01ms !important; } }
+
+/* ---------- layout ---------- */
+.topbar { position: sticky; top: 0; z-index: 40; backdrop-filter: blur(18px) saturate(140%); -webkit-backdrop-filter: blur(18px) saturate(140%); background: rgba(18,12,9,.72); border-bottom: 1px solid var(--line); }
+.topbar-inner { max-width: 1380px; margin: 0 auto; padding: 12px 22px; display: flex; align-items: center; gap: 18px; }
+.brand { display: flex; align-items: center; gap: 12px; min-width: 250px; }
+.brand .logo { width: 40px; height: 40px; flex: none; filter: drop-shadow(0 4px 12px rgba(227,168,92,.35)); animation: spin-in 1.2s var(--ease) both; }
+@keyframes spin-in { from { transform: rotate(-90deg) scale(.6); opacity: 0; } to { transform: none; opacity: 1; } }
+.brand h1 { font-family: var(--display); font-weight: 600; font-size: 20px; margin: 0; letter-spacing: .2px; line-height: 1.1; }
+.brand .sub { font-size: 11px; color: var(--muted); letter-spacing: 1.6px; text-transform: uppercase; }
+.brand .sub b { color: var(--accent); font-weight: 600; }
+nav.tabs { display: flex; gap: 4px; margin-left: auto; flex-wrap: wrap; }
+nav.tabs button { background: transparent; border: 1px solid transparent; color: var(--muted); padding: 8px 14px; border-radius: 999px; cursor: pointer; transition: all .25s var(--ease); display: flex; align-items: center; gap: 8px; font-weight: 500; }
+nav.tabs button svg { width: 16px; height: 16px; }
+nav.tabs button:hover { color: var(--text); background: var(--panel-2); }
+nav.tabs button.active { color: var(--accent-ink); background: linear-gradient(135deg, var(--accent), var(--accent-2)); box-shadow: 0 6px 18px rgba(227,168,92,.25); }
+nav.tabs button .pill { background: rgba(0,0,0,.25); padding: 0 7px; border-radius: 999px; font-size: 11px; }
+nav.tabs button.active .pill { background: rgba(0,0,0,.2); }
+.icon-btn { background: var(--panel); border: 1px solid var(--line); color: var(--muted); width: 38px; height: 38px; border-radius: 12px; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; transition: all .2s var(--ease); }
+.icon-btn:hover { color: var(--text); border-color: var(--line-2); transform: translateY(-1px); }
+.icon-btn svg { width: 18px; height: 18px; }
+
+main { max-width: 1380px; margin: 0 auto; padding: 20px 22px 80px; }
+.view { display: none; animation: view-in .45s var(--ease) both; }
+.view.active { display: block; }
+@keyframes view-in { from { opacity: 0; transform: translateY(14px); filter: blur(4px); } to { opacity: 1; transform: none; filter: none; } }
+
+/* ---------- hero / search ---------- */
+.hero { padding: 26px 0 10px; text-align: center; }
+.hero h2 { font-family: var(--display); font-size: clamp(26px, 3.4vw, 40px); margin: 0 0 6px; font-weight: 500; letter-spacing: .3px; }
+.hero h2 em { font-style: normal; background: linear-gradient(90deg, var(--accent), #fff1d6, var(--accent-2)); background-size: 200% auto; -webkit-background-clip: text; background-clip: text; color: transparent; animation: shimmer 6s linear infinite; }
+@keyframes shimmer { to { background-position: 200% center; } }
+.hero p { color: var(--muted); margin: 0 0 18px; }
+.search { position: relative; max-width: 760px; margin: 0 auto; }
+.search .box { display: flex; align-items: center; gap: 12px; background: var(--panel); border: 1px solid var(--line-2); border-radius: 18px; padding: 6px 10px 6px 18px; box-shadow: var(--shadow); transition: all .25s var(--ease); }
+.search .box:focus-within { border-color: var(--accent); box-shadow: 0 0 0 4px rgba(227,168,92,.15), var(--shadow); transform: translateY(-1px); }
+.search .box svg { width: 22px; height: 22px; color: var(--accent); flex: none; }
+.search input { flex: 1; background: transparent; border: 0; outline: 0; color: var(--text); font-size: 18px; padding: 12px 0; min-width: 0; }
+.search input::placeholder { color: var(--faint); }
+.search kbd { background: var(--panel-3); border: 1px solid var(--line-2); border-bottom-width: 2px; color: var(--muted); border-radius: 7px; padding: 2px 8px; font-size: 12px; font-family: inherit; }
+.search .clear { display: none; }
+.search.has-text .clear { display: inline-flex; }
+.suggest { position: absolute; left: 0; right: 0; top: calc(100% + 8px); background: var(--panel); border: 1px solid var(--line-2); border-radius: 16px; box-shadow: var(--shadow); overflow: hidden; z-index: 30; max-height: 420px; overflow-y: auto; display: none; animation: pop .2s var(--ease) both; }
+.suggest.open { display: block; }
+.suggest .row { display: flex; align-items: center; gap: 12px; padding: 10px 14px; cursor: pointer; border-bottom: 1px solid var(--line); text-align: left; transition: background .15s; }
+.suggest .row:last-child { border-bottom: 0; }
+.suggest .row:hover, .suggest .row.sel { background: var(--panel-2); }
+.suggest .row .thumb { width: 44px; height: 32px; flex: none; }
+.suggest .row .t { flex: 1; min-width: 0; }
+.suggest .row .t b { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.suggest .row .t span { font-size: 12px; color: var(--muted); }
+.suggest .row .ver { font-size: 12px; color: var(--accent); white-space: nowrap; }
+.suggest .empty { padding: 16px; color: var(--muted); text-align: center; }
+@keyframes pop { from { opacity: 0; transform: translateY(-6px) scale(.98); } to { opacity: 1; transform: none; } }
+
+/* ---------- filters ---------- */
+.filters { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 22px 0 14px; }
+.filters .label { color: var(--faint); font-size: 12px; text-transform: uppercase; letter-spacing: 1.2px; margin-right: 4px; }
+.chip { --c: var(--accent); display: inline-flex; align-items: center; gap: 7px; padding: 5px 12px 5px 9px; border-radius: 999px; border: 1px solid var(--line); background: var(--panel); color: var(--muted); font-size: 13px; cursor: pointer; transition: all .2s var(--ease); user-select: none; }
+.chip .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--c); box-shadow: 0 0 10px var(--c); }
+.chip:hover { color: var(--text); border-color: var(--line-2); transform: translateY(-1px); }
+.chip.active { background: color-mix(in srgb, var(--c) 18%, var(--panel)); border-color: var(--c); color: var(--text); }
+.chip .n { color: var(--faint); font-size: 11px; }
+.filters .spacer { flex: 1; }
+.filters select, .field select, .field input[type=text] { background: var(--panel); border: 1px solid var(--line-2); color: var(--text); border-radius: 10px; padding: 7px 10px; outline: 0; }
+.result-meta { color: var(--muted); font-size: 13px; margin: 0 0 12px; display: flex; align-items: center; gap: 12px; }
+
+/* ---------- cards ---------- */
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(275px, 1fr)); gap: 16px; }
+.card { --c: var(--accent); position: relative; background: linear-gradient(180deg, var(--panel-2), var(--panel)); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; display: flex; flex-direction: column; opacity: 0; transform: translateY(18px) scale(.98); transition: transform .35s var(--ease), border-color .3s, box-shadow .3s, opacity .5s; cursor: pointer; }
+.card.in { opacity: 1; transform: none; }
+.card:hover { transform: translateY(-4px); border-color: color-mix(in srgb, var(--c) 55%, var(--line)); box-shadow: 0 18px 40px rgba(0,0,0,.45), 0 0 0 1px color-mix(in srgb, var(--c) 25%, transparent); }
+.card .art { position: relative; height: 150px; display: flex; align-items: center; justify-content: center; background: radial-gradient(60% 80% at 50% 110%, color-mix(in srgb, var(--c) 22%, transparent), transparent 70%); overflow: hidden; }
+.card .art svg, .card .art img { width: 76%; height: 80%; object-fit: contain; filter: drop-shadow(0 12px 18px rgba(0,0,0,.5)); transition: transform .5s var(--ease); }
+.card:hover .art svg, .card:hover .art img { transform: translateY(-4px) scale(1.04); }
+.card .art .tagline { position: absolute; left: 12px; top: 12px; display: flex; gap: 6px; }
+.card .body { padding: 12px 16px 16px; display: flex; flex-direction: column; gap: 8px; flex: 1; }
+.card h3 { margin: 0; font-size: 17px; font-weight: 600; line-height: 1.25; }
+.card .full { color: var(--muted); font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.card .row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.card .foot { margin-top: auto; display: flex; gap: 8px; align-items: center; padding-top: 6px; }
+.card .price { margin-left: auto; color: var(--muted); font-size: 13px; }
+.btag { --c: var(--accent); display: inline-flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 700; letter-spacing: .8px; text-transform: uppercase; padding: 3px 9px; border-radius: 999px; background: color-mix(in srgb, var(--c) 20%, #000 10%); color: var(--c); border: 1px solid color-mix(in srgb, var(--c) 45%, transparent); backdrop-filter: blur(6px); }
+.tag { font-size: 11.5px; padding: 2px 8px; border-radius: 999px; background: var(--panel-3); color: var(--muted); border: 1px solid var(--line); }
+.ver { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 600; color: var(--accent); background: rgba(227,168,92,.1); border: 1px solid rgba(227,168,92,.3); padding: 3px 9px; border-radius: 8px; font-variant-numeric: tabular-nums; }
+.ver.none { color: var(--faint); background: transparent; border-color: var(--line); font-weight: 500; }
+.conf { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+.conf.verified { background: var(--good); box-shadow: 0 0 8px var(--good); }
+.conf.likely { background: var(--warn); box-shadow: 0 0 8px var(--warn); }
+.conf.unknown { background: var(--faint); }
+.method { font-size: 11.5px; color: var(--muted); display: inline-flex; align-items: center; gap: 5px; }
+.method svg { width: 13px; height: 13px; }
+
+/* ---------- buttons ---------- */
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 9px 16px; border-radius: 12px; border: 1px solid var(--line-2); background: var(--panel-2); color: var(--text); cursor: pointer; font-weight: 600; transition: all .2s var(--ease); white-space: nowrap; }
+.btn svg { width: 16px; height: 16px; }
+.btn:hover { border-color: var(--accent); transform: translateY(-1px); }
+.btn:active { transform: translateY(0) scale(.98); }
+.btn.primary { background: linear-gradient(135deg, var(--accent), var(--accent-2)); color: var(--accent-ink); border-color: transparent; box-shadow: 0 8px 20px rgba(227,168,92,.25); }
+.btn.primary:hover { box-shadow: 0 12px 28px rgba(227,168,92,.35); filter: brightness(1.05); }
+.btn.ghost { background: transparent; }
+.btn.sm { padding: 6px 11px; font-size: 13px; border-radius: 10px; }
+.btn.danger { background: #4a1f1f; border-color: #7a3030; color: #ffb3b3; }
+.btn.danger:hover { border-color: var(--bad); }
+.btn[disabled] { opacity: .5; pointer-events: none; }
+.btn .spin { width: 14px; height: 14px; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: rot .8s linear infinite; }
+@keyframes rot { to { transform: rotate(360deg); } }
+
+/* ---------- drawer ---------- */
+.scrim { position: fixed; inset: 0; background: rgba(8,4,2,.6); backdrop-filter: blur(3px); z-index: 50; opacity: 0; pointer-events: none; transition: opacity .3s; }
+.scrim.open { opacity: 1; pointer-events: auto; }
+.drawer { position: fixed; top: 0; right: 0; bottom: 0; width: min(620px, 100vw); background: var(--bg-2); border-left: 1px solid var(--line-2); z-index: 60; transform: translateX(104%); transition: transform .45s var(--ease); overflow-y: auto; box-shadow: -30px 0 60px rgba(0,0,0,.5); }
+.drawer.open { transform: none; }
+.drawer .hero-art { --c: var(--accent); height: 240px; display: flex; align-items: center; justify-content: center; background: radial-gradient(70% 90% at 50% 120%, color-mix(in srgb, var(--c) 28%, transparent), transparent 70%), linear-gradient(180deg, var(--panel-2), transparent); position: relative; }
+.drawer .hero-art svg, .drawer .hero-art img { width: 60%; height: 78%; object-fit: contain; filter: drop-shadow(0 20px 30px rgba(0,0,0,.6)); animation: float 6s ease-in-out infinite; }
+@keyframes float { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-8px); } }
+.drawer .close { position: absolute; top: 14px; right: 14px; }
+.drawer .content { padding: 6px 26px 40px; }
+.drawer h2 { font-family: var(--display); font-size: 28px; margin: 6px 0 2px; font-weight: 600; line-height: 1.15; }
+.drawer .fullname { color: var(--muted); margin-bottom: 12px; }
+.drawer .tags { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 16px; }
+.drawer p.summary { color: var(--text); opacity: .9; margin: 0 0 16px; }
+.section { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px 18px; margin: 14px 0; }
+.section h4 { margin: 0 0 10px; font-size: 12px; letter-spacing: 1.4px; text-transform: uppercase; color: var(--faint); display: flex; align-items: center; gap: 8px; }
+.section h4 .right { margin-left: auto; text-transform: none; letter-spacing: 0; font-weight: 500; color: var(--muted); }
+.specs { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 16px; }
+.specs div { font-size: 13.5px; }
+.specs div span { display: block; color: var(--faint); font-size: 11px; text-transform: uppercase; letter-spacing: .8px; }
+.fw-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.fw-head .big { font-size: 30px; font-weight: 700; color: var(--accent); font-variant-numeric: tabular-nums; line-height: 1; }
+.fw-head .meta { color: var(--muted); font-size: 13px; }
+.fw-notes { margin: 12px 0 0; color: var(--text); opacity: .9; font-size: 14px; }
+.howto { margin: 8px 0 0; padding-left: 18px; color: var(--text); opacity: .9; font-size: 14px; }
+.howto li { margin: 4px 0; }
+.actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 14px; }
+.dl-list { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+.dl-row { display: flex; align-items: center; gap: 10px; padding: 10px 12px; background: var(--panel-2); border: 1px solid var(--line); border-radius: 12px; }
+.dl-row .os { width: 28px; height: 28px; border-radius: 8px; background: var(--panel-3); display: inline-flex; align-items: center; justify-content: center; color: var(--muted); flex: none; }
+.dl-row .os svg { width: 16px; height: 16px; }
+.dl-row .t { flex: 1; min-width: 0; font-size: 13.5px; }
+.dl-row .t b { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dl-row .t span { color: var(--muted); font-size: 12px; }
+.check-result { margin-top: 12px; padding: 12px 14px; border-radius: 12px; background: var(--panel-2); border: 1px solid var(--line); font-size: 13.5px; animation: pop .25s var(--ease) both; }
+.check-result.newer { border-color: var(--warn); background: rgba(242,198,109,.08); }
+.check-result.same { border-color: var(--good); background: rgba(127,216,164,.08); }
+.check-result.err { border-color: var(--bad); background: rgba(255,122,122,.08); }
+.check-result .cands { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+.check-result .cands span { font-size: 12px; padding: 2px 8px; border-radius: 999px; background: var(--panel-3); border: 1px solid var(--line); color: var(--muted); }
+.check-result .snip { color: var(--muted); font-size: 12.5px; margin-top: 8px; font-style: italic; }
+.notice { font-size: 13px; color: var(--muted); padding: 10px 12px; border-left: 3px solid var(--accent); background: rgba(227,168,92,.06); border-radius: 0 10px 10px 0; margin-top: 10px; }
+.notice.warn { border-color: var(--warn); background: rgba(242,198,109,.08); color: var(--text); }
+.notice.bad { border-color: var(--bad); background: rgba(255,122,122,.08); color: var(--text); }
+
+/* ---------- modal ---------- */
+.modal-wrap { position: fixed; inset: 0; z-index: 70; display: none; align-items: center; justify-content: center; padding: 20px; }
+.modal-wrap.open { display: flex; }
+.modal { width: min(640px, 100%); max-height: 90vh; overflow-y: auto; background: var(--bg-2); border: 1px solid var(--line-2); border-radius: 20px; box-shadow: var(--shadow); animation: modal-in .35s var(--ease) both; }
+@keyframes modal-in { from { opacity: 0; transform: translateY(18px) scale(.97); } to { opacity: 1; transform: none; } }
+.modal header { padding: 18px 22px 10px; display: flex; align-items: center; gap: 12px; border-bottom: 1px solid var(--line); }
+.modal header h3 { margin: 0; font-size: 19px; font-family: var(--display); }
+.modal header .close { margin-left: auto; }
+.modal .mbody { padding: 16px 22px 22px; }
+.opt { display: flex; gap: 14px; align-items: flex-start; padding: 14px; border: 1px solid var(--line); border-radius: 14px; background: var(--panel); margin-bottom: 10px; cursor: pointer; transition: all .2s var(--ease); }
+.opt:hover { border-color: var(--accent); transform: translateX(3px); background: var(--panel-2); }
+.opt.disabled { opacity: .45; pointer-events: none; }
+.opt .ico { width: 40px; height: 40px; border-radius: 12px; background: var(--panel-3); display: inline-flex; align-items: center; justify-content: center; color: var(--accent); flex: none; }
+.opt .ico svg { width: 20px; height: 20px; }
+.opt b { display: block; margin-bottom: 2px; }
+.opt span { color: var(--muted); font-size: 13px; }
+.opt .arrow { margin-left: auto; color: var(--faint); align-self: center; }
+.field { display: flex; flex-direction: column; gap: 6px; margin: 10px 0; }
+.field label { font-size: 12px; color: var(--faint); text-transform: uppercase; letter-spacing: 1px; }
+.field input[type=text] { font-size: 14px; }
+.toggle { display: flex; align-items: center; gap: 10px; cursor: pointer; }
+.toggle input { appearance: none; width: 42px; height: 24px; border-radius: 999px; background: var(--panel-3); border: 1px solid var(--line-2); position: relative; cursor: pointer; transition: background .2s; }
+.toggle input::after { content: ""; position: absolute; top: 2px; left: 2px; width: 18px; height: 18px; border-radius: 50%; background: var(--muted); transition: all .2s var(--ease); }
+.toggle input:checked { background: var(--accent); border-color: var(--accent); }
+.toggle input:checked::after { left: 20px; background: var(--accent-ink); }
+.vol-list { display: flex; flex-direction: column; gap: 8px; }
+.vol { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); cursor: pointer; transition: all .2s; }
+.vol:hover, .vol.sel { border-color: var(--accent); background: var(--panel-2); }
+.vol .ico { color: var(--accent); }
+.vol .ico svg { width: 22px; height: 22px; }
+.vol .t { flex: 1; min-width: 0; }
+.vol .t b { display: block; }
+.vol .t span { color: var(--muted); font-size: 12.5px; }
+.vol .warn { color: var(--warn); font-size: 12px; }
+
+/* ---------- downloads ---------- */
+.job { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px 16px; margin-bottom: 10px; animation: pop .3s var(--ease) both; }
+.job .head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.job .head b { flex: 1; min-width: 200px; }
+.job .state { font-size: 11.5px; text-transform: uppercase; letter-spacing: 1px; padding: 2px 8px; border-radius: 999px; background: var(--panel-3); color: var(--muted); }
+.job .state.running { color: var(--info); }
+.job .state.done { color: var(--good); }
+.job .state.error { color: var(--bad); }
+.job .sub { color: var(--muted); font-size: 12.5px; margin-top: 4px; word-break: break-all; }
+.bar { height: 8px; background: var(--panel-3); border-radius: 999px; overflow: hidden; margin: 10px 0 6px; }
+.bar i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, var(--accent-2), var(--accent)); border-radius: 999px; transition: width .4s var(--ease); position: relative; }
+.bar i.indeterminate { width: 40%; animation: slide 1.4s ease-in-out infinite; }
+.bar i::after { content: ""; position: absolute; inset: 0; background: linear-gradient(90deg, transparent, rgba(255,255,255,.25), transparent); animation: shine 1.6s linear infinite; }
+@keyframes slide { 0% { margin-left: -40%; } 100% { margin-left: 100%; } }
+@keyframes shine { from { transform: translateX(-100%); } to { transform: translateX(100%); } }
+.job .acts { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+.job .err { color: var(--bad); font-size: 13px; margin-top: 6px; }
+.log { background: #0d0806; border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; color: #d7c6b4; max-height: 220px; overflow-y: auto; white-space: pre-wrap; margin-top: 8px; }
+.files { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 10px; }
+.file { display: flex; align-items: center; gap: 10px; padding: 10px 12px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; }
+.file .t { flex: 1; min-width: 0; font-size: 13.5px; }
+.file .t b { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.file .t span { color: var(--muted); font-size: 12px; }
+
+/* ---------- windows tab ---------- */
+.two-col { display: grid; grid-template-columns: 1.3fr 1fr; gap: 18px; align-items: start; }
+@media (max-width: 980px) { .two-col { grid-template-columns: 1fr; } }
+.win-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 14px; }
+.win-card { --c: #4fc3f7; background: linear-gradient(180deg, var(--panel-2), var(--panel)); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; display: flex; flex-direction: column; gap: 10px; transition: all .3s var(--ease); opacity: 0; transform: translateY(14px); }
+.win-card.in { opacity: 1; transform: none; }
+.win-card:hover { border-color: color-mix(in srgb, var(--c) 50%, var(--line)); transform: translateY(-3px); box-shadow: 0 16px 36px rgba(0,0,0,.4); }
+.win-card .head { display: flex; align-items: center; gap: 12px; }
+.win-card .head svg { width: 38px; height: 38px; flex: none; }
+.win-card h3 { margin: 0; font-size: 18px; }
+.win-card h3 small { color: var(--muted); font-weight: 500; font-size: 13px; margin-left: 6px; }
+.win-card .meta { font-size: 12.5px; color: var(--muted); display: flex; flex-wrap: wrap; gap: 6px 12px; }
+.win-card p { margin: 0; font-size: 13.5px; color: var(--text); opacity: .9; }
+.win-card .resolve { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; display: none; flex-direction: column; gap: 8px; }
+.win-card .resolve.open { display: flex; animation: pop .25s var(--ease) both; }
+.win-card .resolve select { width: 100%; }
+.link-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 13px; }
+.link-row code { background: var(--panel-3); padding: 2px 6px; border-radius: 6px; font-size: 11.5px; word-break: break-all; }
+.sticky-panel { position: sticky; top: 84px; }
+.tool { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-bottom: 1px solid var(--line); }
+.tool:last-child { border-bottom: 0; }
+.tool .t { flex: 1; min-width: 0; font-size: 13.5px; }
+.tool .t b { display: block; }
+.tool .t span { color: var(--muted); font-size: 12.5px; }
+.usb-steps { display: flex; flex-direction: column; gap: 10px; }
+.usb-steps .step { display: flex; gap: 12px; align-items: flex-start; }
+.usb-steps .num { width: 26px; height: 26px; border-radius: 50%; background: var(--accent); color: var(--accent-ink); font-weight: 700; display: inline-flex; align-items: center; justify-content: center; flex: none; font-size: 13px; }
+.usb-steps .step > div { flex: 1; min-width: 0; }
+.radio-row { display: flex; gap: 8px; flex-wrap: wrap; }
+.radio-row label { display: inline-flex; align-items: center; gap: 6px; padding: 6px 11px; border: 1px solid var(--line); border-radius: 10px; cursor: pointer; font-size: 13px; background: var(--panel); }
+.radio-row label:has(input:checked) { border-color: var(--accent); background: rgba(227,168,92,.1); }
+.radio-row input { accent-color: var(--accent); }
+
+/* ---------- about / footer ---------- */
+footer { border-top: 1px solid var(--line); margin-top: 40px; padding: 26px 22px; text-align: center; color: var(--muted); font-size: 13px; }
+footer .made { font-family: var(--display); font-size: 16px; color: var(--text); }
+footer .made b { color: var(--accent); }
+footer a.zays { display: inline-flex; align-items: center; gap: 6px; font-weight: 700; letter-spacing: 1.5px; color: var(--accent); }
+.about { max-width: 820px; margin: 0 auto; }
+.about .big-logo { width: 120px; height: 120px; margin: 10px auto; display: block; filter: drop-shadow(0 10px 30px rgba(227,168,92,.35)); animation: float 6s ease-in-out infinite; }
+.stat-row { display: flex; gap: 12px; flex-wrap: wrap; justify-content: center; margin: 16px 0; }
+.stat { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 12px 18px; min-width: 120px; text-align: center; }
+.stat b { display: block; font-size: 26px; color: var(--accent); font-family: var(--display); }
+.stat span { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: 1px; }
+
+/* ---------- toast ---------- */
+.toasts { position: fixed; right: 18px; bottom: 18px; z-index: 90; display: flex; flex-direction: column; gap: 8px; }
+.toast { background: var(--panel-2); border: 1px solid var(--line-2); color: var(--text); padding: 11px 14px; border-radius: 12px; box-shadow: var(--shadow); font-size: 13.5px; max-width: 360px; animation: toast-in .35s var(--ease) both; display: flex; gap: 10px; align-items: center; }
+.toast.good { border-color: var(--good); }
+.toast.bad { border-color: var(--bad); }
+.toast.out { animation: toast-out .3s var(--ease) forwards; }
+@keyframes toast-in { from { opacity: 0; transform: translateX(30px); } to { opacity: 1; transform: none; } }
+@keyframes toast-out { to { opacity: 0; transform: translateY(10px); } }
+
+.empty-state { text-align: center; color: var(--muted); padding: 50px 20px; }
+.empty-state svg { width: 60px; height: 60px; color: var(--faint); margin-bottom: 10px; }
+.hidden { display: none !important; }
+.muted { color: var(--muted); }
+.small { font-size: 12.5px; }
+.mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+@media (max-width: 900px) {
+  .topbar-inner { flex-wrap: wrap; gap: 10px 12px; padding: 10px 14px; }
+  .brand { min-width: 0; flex: 1; }
+  .brand .logo { width: 32px; height: 32px; }
+  .brand h1 { font-size: 16px; }
+  .brand .sub { font-size: 10px; letter-spacing: 1.2px; }
+  nav.tabs { order: 3; width: 100%; flex-wrap: nowrap; overflow-x: auto; gap: 4px; padding-bottom: 2px; margin-left: 0; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+  nav.tabs::-webkit-scrollbar { display: none; }
+  nav.tabs button { flex: none; padding: 6px 11px; font-size: 13px; }
+  nav.tabs button svg { width: 14px; height: 14px; }
+  .icon-btn { width: 34px; height: 34px; }
+  main { padding: 12px 14px 60px; }
+  .hero { padding: 14px 0 6px; }
+  .hero h2 { font-size: 24px; }
+  .hero p { font-size: 13.5px; }
+  .search .box { padding: 4px 8px 4px 14px; border-radius: 14px; }
+  .search input { font-size: 16px; padding: 10px 0; }
+  .search kbd { display: none; }
+  .filters { gap: 6px; margin: 14px 0 10px; }
+  .chip { font-size: 12px; padding: 4px 10px 4px 8px; }
+  .grid { grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 12px; }
+  .card .art { height: 120px; }
+  .specs { grid-template-columns: 1fr; }
+  .drawer { width: 100vw; }
+  .drawer .content { padding: 6px 16px 30px; }
+  .drawer .hero-art { height: 190px; }
+  .modal { border-radius: 16px; }
+  .modal .mbody, .modal header { padding-left: 16px; padding-right: 16px; }
+  .two-col { grid-template-columns: 1fr; }
+  .sticky-panel { position: static; }
+  .win-grid { grid-template-columns: 1fr; }
+  footer { padding: 20px 14px; }
+}
+@media (max-width: 520px) {
+  .grid { grid-template-columns: 1fr; }
+  .card .art { height: 140px; }
+  .actions .btn { flex: 1; }
+}
+
+/* ---------- web edition (static hosting) ---------- */
+.web-only { display: none; }
+.static .web-only { display: block; }
+.static .edition.web-only { display: inline-block; }
+.static .desktop-only { display: none !important; }
+.static nav.tabs button[data-view="downloads"] { display: none; }
+.edition { display: inline-block; font-size: 10px; letter-spacing: 1.4px; text-transform: uppercase; padding: 2px 7px; border-radius: 999px; background: rgba(227,168,92,.14); color: var(--accent); border: 1px solid rgba(227,168,92,.35); margin-left: 6px; vertical-align: 1px; }
+a.btn, a.opt, a.chip { text-decoration: none; }
+a.btn:hover, a.opt:hover { text-decoration: none; }
+.callout { background: linear-gradient(135deg, rgba(227,168,92,.12), rgba(201,116,60,.06)); border: 1px solid rgba(227,168,92,.35); border-radius: var(--radius); padding: 14px 18px; margin: 14px 0; font-size: 14px; }
+.callout b { color: var(--accent); }
+
+/* ---------- embedded inside GTS Hub (iframe) ---------- */
+.embed .topbar, .embed footer { display: none; }
+.embed main { padding-top: 6px; }
+.embed .hero { padding-top: 10px; }
+.embed .backdrop { background: var(--bg); }
+
+</style>
+
+<div class="backdrop"><div class="blob b1"></div><div class="blob b2"></div><div class="blob b3"></div><div class="grain"></div></div>
+
+<header class="topbar">
+  <div class="topbar-inner">
+    <div class="brand">
+      <svg class="logo" viewBox="0 0 48 48" aria-hidden="true">
+        <circle cx="24" cy="24" r="22" fill="#1a110c" stroke="#5a4535" stroke-width="1.5"/>
+        <g fill="none" stroke="#e3a85c" stroke-width="2.6" stroke-linecap="round">
+          <path d="M24 8 L36 28"/><path d="M39 17 L19 20"/><path d="M39 31 L15 36"/><path d="M24 40 L12 20"/><path d="M9 31 L29 28"/><path d="M9 17 L33 12"/>
+        </g>
+        <circle cx="24" cy="24" r="5" fill="#e3a85c"/>
+      </svg>
+      <div>
+        <h1>Camera Firmware Hub</h1>
+        <div class="sub">Made for <b>B&amp;H</b> · by <b>ZAYS.us</b><span class="edition web-only">Web edition</span></div>
+      </div>
+    </div>
+    <nav class="tabs" id="tabs">
+      <button data-view="camera"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 8h3l2-3h6l2 3h3a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2z"/><circle cx="12" cy="13" r="3.5"/></svg>Cameras <span class="pill" data-count="camera"></span></button>
+      <button data-view="lens"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4"/><path d="M12 3v2M12 19v2M3 12h2M19 12h2"/></svg>Lenses <span class="pill" data-count="lens"></span></button>
+      <button data-view="flash"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2 4 14h7l-1 8 9-12h-7z"/></svg>Flashes &amp; Lighting <span class="pill" data-count="flash"></span></button>
+      <button data-view="accessory"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="6" width="18" height="12" rx="2"/><path d="M7 10h4M7 14h10"/></svg>Accessories <span class="pill" data-count="accessory"></span></button>
+      <button data-view="windows"><svg viewBox="0 0 24 24" fill="currentColor"><rect x="3" y="3" width="8" height="8" rx="1"/><rect x="13" y="3" width="8" height="8" rx="1"/><rect x="3" y="13" width="8" height="8" rx="1"/><rect x="13" y="13" width="8" height="8" rx="1"/></svg>Windows ISO</button>
+      <button data-view="downloads"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12M7 10l5 5 5-5M4 19h16"/></svg>Downloads <span class="pill" id="jobs-pill"></span></button>
+      <button data-view="about"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 8h.01M11 12h1v4h1"/></svg>About</button>
+    </nav>
+    <button class="icon-btn" id="btn-settings" title="Settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></button>
+  </div>
+</header>
+
+<main>
+  <!-- ========== catalog views (camera / lens / flash / accessory share one template) ========== -->
+  <section class="view" id="view-catalog">
+    <div class="hero">
+      <h2 id="hero-title">Find it. <em>Update it.</em> Done.</h2>
+      <p id="hero-sub">Type a camera, lens or flash name and the latest firmware is one click away.</p>
+      <div class="search" id="search">
+        <div class="box">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+          <input id="q" type="text" autocomplete="off" spellcheck="false" placeholder="Search… a7 IV, R6 Mark II, Z8, X-T5, AD200 Pro, 24-70 GM">
+          <button class="icon-btn clear" id="q-clear" title="Clear"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+          <kbd>/</kbd>
+        </div>
+        <div class="suggest" id="suggest"></div>
+      </div>
+    </div>
+    <div class="filters" id="brand-filters"></div>
+    <div class="result-meta"><span id="result-count"></span><span class="spacer"></span>
+      <label class="small muted">Sort <select id="sort"><option value="brand">Brand · Model</option><option value="model">Model A–Z</option><option value="price">Price (low → high)</option><option value="newest">Newest firmware</option></select></label>
+    </div>
+    <div class="grid" id="grid"></div>
+    <div class="empty-state hidden" id="empty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><div>No matches. Try the model code (ILCE-7M4, R6M2, Z6III) or just the brand.</div></div>
+  </section>
+
+  <!-- ========== Windows ISO ========== -->
+  <section class="view" id="view-windows">
+    <div class="hero">
+      <h2>Windows <em>install media</em>, the official way.</h2>
+      <p>Direct ISO links straight from Microsoft, hash-verified downloads, and a bootable flash drive or DVD in a few clicks.</p>
+    </div>
+    <div class="callout web-only">You're on the <b>web edition</b>. Pick the Windows version and language on Microsoft's page (links below). Bootable USB writing, hash checks and direct-link resolving run in the desktop app.</div>
+    <div class="two-col">
+      <div>
+        <div class="win-grid" id="win-grid"></div>
+        <div class="section desktop-only" style="margin-top:18px">
+          <h4>Make a bootable flash drive / burn a disc <span class="right" id="usb-os"></span></h4>
+          <div class="usb-steps">
+            <div class="step"><span class="num">1</span><div>
+              <div class="field"><label>ISO file</label>
+                <div style="display:flex;gap:8px;flex-wrap:wrap"><select id="usb-iso" style="flex:1;min-width:220px"></select><button class="btn sm" id="usb-iso-refresh">Refresh</button></div>
+                <input type="text" id="usb-iso-path" placeholder="…or paste a full path to any .iso on this computer">
+              </div></div></div>
+            <div class="step"><span class="num">2</span><div>
+              <div class="field"><label>Flash drive (will be completely erased)</label>
+                <div class="vol-list" id="usb-disks"></div>
+                <div style="margin-top:6px"><button class="btn sm" id="usb-disk-refresh">Rescan drives</button></div>
+              </div></div></div>
+            <div class="step"><span class="num">3</span><div>
+              <div class="field"><label>What to do</label>
+                <div class="radio-row">
+                  <label><input type="radio" name="usb-mode" value="windows" checked> Windows installer USB (UEFI, FAT32)</label>
+                  <label><input type="radio" name="usb-mode" value="raw"> Raw write (Linux / rescue ISOs)</label>
+                  <label><input type="radio" name="usb-mode" value="dvd"> Burn to DVD</label>
+                </div>
+              </div>
+              <div class="field"><label>Volume label</label><input type="text" id="usb-label" value="WINDOWS" maxlength="11" style="max-width:200px"></div>
+              <div class="notice" id="usb-hint"></div>
+            </div></div>
+            <div class="step"><span class="num">4</span><div>
+              <button class="btn primary" id="usb-go"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12M7 10l5 5 5-5M4 19h16"/></svg> Write it</button>
+            </div></div>
+          </div>
+          <div id="usb-jobs"></div>
+        </div>
+      </div>
+      <div class="sticky-panel">
+        <div class="section">
+          <h4>Tools</h4>
+          <div id="win-tools"></div>
+        </div>
+        <div class="section">
+          <h4>Good to know</h4>
+          <ul class="howto">
+            <li>Links Microsoft hands out expire after 24 hours and only work from this network. Resolve, then download right away.</li>
+            <li>Every ISO download is checked against Microsoft's published SHA-256 when one is available.</li>
+            <li>On a Mac, a Windows USB needs <span class="mono">wimlib</span> to split the 4 GB+ install.wim (<span class="mono">brew install wimlib</span>). On a Windows PC everything is built in.</li>
+            <li>An Apple-silicon Mac can't boot Windows from USB; use the Arm64 ISO inside Parallels / VMware Fusion / UTM instead.</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========== Downloads ========== -->
+  <section class="view" id="view-downloads">
+    <div class="hero">
+      <h2>Your <em>downloads</em>.</h2>
+      <p>Everything lands in <span class="mono" id="dl-dir"></span></p>
+      <div class="actions" style="justify-content:center"><button class="btn" id="btn-open-folder">Open folder</button><button class="btn ghost" id="btn-clear-jobs">Clear finished</button></div>
+    </div>
+    <div class="desktop-only"><div id="jobs"></div>
+    <div class="section"><h4>Files on disk</h4><div class="files" id="files"></div></div></div>
+  </section>
+
+  <!-- ========== About ========== -->
+  <section class="view" id="view-about">
+    <div class="about">
+      <svg class="big-logo" viewBox="0 0 48 48" aria-hidden="true">
+        <circle cx="24" cy="24" r="22" fill="#1a110c" stroke="#5a4535" stroke-width="1.5"/>
+        <g fill="none" stroke="#e3a85c" stroke-width="2.6" stroke-linecap="round"><path d="M24 8 L36 28"/><path d="M39 17 L19 20"/><path d="M39 31 L15 36"/><path d="M24 40 L12 20"/><path d="M9 31 L29 28"/><path d="M9 17 L33 12"/></g>
+        <circle cx="24" cy="24" r="5" fill="#e3a85c"/>
+      </svg>
+      <div class="hero"><h2>Camera <em>Firmware Hub</em></h2><p>Made for B&amp;H · Created by <a class="zays" href="https://zays.us" target="_blank" rel="noopener">ZAYS.us</a></p></div>
+      <div class="stat-row" id="about-stats"></div>
+      <div class="section">
+        <h4>What it does</h4>
+        <ul class="howto">
+          <li><b>Search</b> the most popular cameras, lenses, flashes and accessories sold at B&amp;H by name, nickname or model code.</li>
+          <li><b>See the latest firmware</b> on file, when it was verified, what changed, and exactly how to install it.</li>
+          <li><b>Update now</b> downloads the real firmware file or installer when the maker allows direct links, copies card-type firmware straight to a memory card, or opens the official page when the download is gated.</li>
+          <li><b>Check for newer</b> re-reads the official page live and tells you if the maker has posted a newer version than this catalog knows about.</li>
+          <li><b>Windows ISO</b> resolves official Microsoft images, verifies hashes, and writes bootable flash drives or DVDs.</li>
+        </ul>
+      </div>
+      <div class="section">
+        <h4>Safety rules (read once)</h4>
+        <ul class="howto">
+          <li>Only install firmware for the <b>exact</b> model. Variants (R5 vs R5 Mark II, V1-S vs V1-C) use different files.</li>
+          <li>Fully charge the battery and format the card <b>in the camera</b> first. Never power off during an update.</li>
+          <li>Firmware versions are a snapshot; use <b>Check for newer</b> or the official page before a store demo.</li>
+          <li>The Windows USB writer erases the whole flash drive. Double-check the drive name and size.</li>
+        </ul>
+      </div>
+      <div class="callout web-only"><b>Desktop app.</b> The full version runs on a Mac or PC and adds: copy firmware straight to a memory card, auto-launch installers, live "check for newer", direct Microsoft ISO links with hash verification, and bootable USB / DVD writing. Ask whoever shared this page for the "Camera Firmware" folder and double-click the Start file inside.</div>
+      <div class="section desktop-only">
+        <h4>Add your own gear</h4>
+        <p class="small muted">Drop entries in <span class="mono">data/catalog.user.json</span> (same format as <span class="mono">data/catalog.json</span>). Same id = override. The app reloads it automatically.</p>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="made">Made for <b>B&amp;H</b></div>
+  <div>Created by <a class="zays" href="https://zays.us" target="_blank" rel="noopener">ZAYS.us</a> · <span id="foot-version"></span></div>
+</footer>
+
+<!-- drawer -->
+<div class="scrim" id="scrim"></div>
+<aside class="drawer" id="drawer"></aside>
+
+<!-- modal -->
+<div class="modal-wrap" id="modal-wrap"><div class="modal" id="modal"></div></div>
+
+<div class="toasts" id="toasts"></div>
+
+<script>
+/* Product illustrations as inline SVG, tinted with the brand colour. Zero network cost. */
+(function (global) {
+  function pick(item) {
+    var t = ((item.tags || []).join(" ") + " " + (item.model || "") + " " + (item.fullName || "") + " " + (item.category || "")).toLowerCase();
+    var cat = item.category;
+    if (cat === "camera") {
+      if (/360/.test(t)) return "cam360";
+      if (/action|gopro|hero|osmo|insta360|ace pro|pocket/.test(t)) return "action";
+      if (/cinema|pyxis|ursa|fx3|fx30|fx2|fx6|zr\b|c50|c70|eos c/.test(t)) return "cinema";
+      if (/dslr|d850|d780|d7500|k-3|k-1|5d|90d|rebel/.test(t)) return "dslr";
+      if (/compact|rx100|x100|gr iii|gr iv|zv-1|g7 x|powershot|d-lux|q3|tg-7|p950|p1100|x half|pentax 17/.test(t)) return "compact";
+      if (/medium format|gfx|x2d|907x|hasselblad/.test(t)) return "mediumformat";
+      return "mirrorless";
+    }
+    if (cat === "lens") {
+      if (/\b(1[0-9]{2}|[2-9][0-9]{2})-?[0-9]*mm|tele|sports|600|500|400|300-600|150-/.test(t) && /-/.test(item.model || "")) return "tele";
+      if (/prime|f\/1\.|f1\.|\b(24|28|33|35|50|56|75|85|90|105|135)mm/.test(t) && !/-/.test(item.model || "")) return "prime";
+      return "zoom";
+    }
+    if (cat === "flash") {
+      if (/trigger|transmitter|commander|xpro|x3|x2t|st-e|fa-wrc|air 10|connect pro|fj-x/.test(t)) return "trigger";
+      if (/led|cob|panel|tube|bi-color|rgb|amaran|aputure|nanlite|forza|pavotube|molus|litemons|ml60|sl60|sl150|tl60|tl120|lc500|la200|cb60|cb200|fiveray|storm|mc pro/.test(t)) return "led";
+      if (/strobe|monolight|ad200|ad300|ad400|ad600|ad100|b10|a2|pro-|elb|fj400|fj200|fj800|one\b|five\b|three\b|ms300|elinchrom/.test(t)) return "strobe";
+      return "speedlite";
+    }
+    if (/card|cfexpress|reader|angelbird|prograde|lexar|sandisk/.test(t)) return "card";
+    if (/mic|wireless|rode|rØde|hollyland|lark|recorder|zoom h/.test(t)) return "mic";
+    if (/gimbal|rs 4|rs 3|ronin|osmo mobile|flow/.test(t)) return "gimbal";
+    if (/monitor|ninja|shinobi|atomos/.test(t)) return "monitor";
+    if (/switcher|atem/.test(t)) return "switcher";
+    if (/software|app|tool|g3|workspace/.test(t)) return "software";
+    return "box";
+  }
+
+  var body = "#3b2a1f", body2 = "#2a1c14", dark = "#1a110c", glass = "#6b5a4c", hi = "rgba(255,255,255,.18)";
+
+  function wrap(inner, vb) {
+    return '<svg viewBox="' + (vb || "0 0 240 160") + '" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid meet">' +
+      '<defs><linearGradient id="gb" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#4a3728"/><stop offset="1" stop-color="#22160f"/></linearGradient>' +
+      '<radialGradient id="gl" cx=".4" cy=".35" r=".7"><stop offset="0" stop-color="#9c8a7b"/><stop offset=".55" stop-color="#2e2420"/><stop offset="1" stop-color="#0d0908"/></radialGradient></defs>' + inner + "</svg>";
+  }
+
+  var ART = {
+    mirrorless: function (c) {
+      return wrap('<rect x="30" y="48" width="180" height="84" rx="12" fill="url(#gb)" stroke="#5a4535" stroke-width="2"/>' +
+        '<rect x="30" y="48" width="180" height="20" rx="10" fill="' + hi + '"/>' +
+        '<rect x="88" y="34" width="52" height="18" rx="5" fill="' + body2 + '" stroke="#5a4535"/>' +
+        '<rect x="104" y="28" width="20" height="8" rx="3" fill="' + dark + '"/>' +
+        '<rect x="46" y="38" width="16" height="12" rx="3" fill="' + c + '" opacity=".9"/>' +
+        '<circle cx="120" cy="92" r="34" fill="#1b1310" stroke="#5a4535" stroke-width="2"/>' +
+        '<circle cx="120" cy="92" r="26" fill="url(#gl)"/>' +
+        '<circle cx="120" cy="92" r="26" fill="none" stroke="' + c + '" stroke-width="2" opacity=".85"/>' +
+        '<circle cx="110" cy="82" r="5" fill="#fff" opacity=".35"/>' +
+        '<rect x="40" y="76" width="34" height="40" rx="6" fill="#241a14" stroke="#5a4535"/>' +
+        '<rect x="170" y="80" width="26" height="8" rx="3" fill="' + c + '" opacity=".7"/>' +
+        '<rect x="170" y="94" width="18" height="6" rx="3" fill="#5a4535"/>');
+    },
+    dslr: function (c) {
+      return wrap('<path d="M34 60 h62 l10-18 h32 l10 18 h58 a12 12 0 0 1 12 12 v52 a12 12 0 0 1 -12 12 H34 a12 12 0 0 1 -12 -12 V72 a12 12 0 0 1 12 -12z" fill="url(#gb)" stroke="#5a4535" stroke-width="2"/>' +
+        '<rect x="22" y="62" width="196" height="16" rx="8" fill="' + hi + '"/>' +
+        '<circle cx="124" cy="98" r="36" fill="#1b1310" stroke="#5a4535" stroke-width="2"/>' +
+        '<circle cx="124" cy="98" r="27" fill="url(#gl)"/>' +
+        '<circle cx="124" cy="98" r="27" fill="none" stroke="' + c + '" stroke-width="2.5" opacity=".85"/>' +
+        '<circle cx="113" cy="88" r="5" fill="#fff" opacity=".35"/>' +
+        '<rect x="34" y="84" width="40" height="46" rx="8" fill="#241a14" stroke="#5a4535"/>' +
+        '<rect x="44" y="44" width="14" height="10" rx="3" fill="' + c + '"/>' +
+        '<rect x="176" y="86" width="24" height="8" rx="3" fill="' + c + '" opacity=".6"/>');
+    },
+    cinema: function (c) {
+      return wrap('<rect x="28" y="52" width="150" height="76" rx="10" fill="url(#gb)" stroke="#5a4535" stroke-width="2"/>' +
+        '<rect x="28" y="52" width="150" height="16" rx="8" fill="' + hi + '"/>' +
+        '<rect x="60" y="34" width="70" height="18" rx="4" fill="' + body2 + '" stroke="#5a4535"/>' +
+        '<rect x="170" y="62" width="48" height="52" rx="6" fill="#1b1310" stroke="#5a4535" stroke-width="2"/>' +
+        '<rect x="176" y="68" width="36" height="40" rx="3" fill="#0d0908"/>' +
+        '<rect x="179" y="71" width="30" height="34" rx="2" fill="' + c + '" opacity=".25"/>' +
+        '<circle cx="78" cy="92" r="30" fill="#1b1310" stroke="#5a4535" stroke-width="2"/>' +
+        '<circle cx="78" cy="92" r="22" fill="url(#gl)"/>' +
+        '<circle cx="78" cy="92" r="22" fill="none" stroke="' + c + '" stroke-width="2.5" opacity=".85"/>' +
+        '<circle cx="130" cy="86" r="5" fill="' + c + '"/><circle cx="146" cy="86" r="5" fill="#5a4535"/>' +
+        '<rect x="120" y="100" width="40" height="14" rx="3" fill="#241a14" stroke="#5a4535"/>' +
+        '<rect x="40" y="38" width="12" height="14" rx="2" fill="' + c + '" opacity=".8"/>');
+    },
+    compact: function (c) {
+      return wrap('<rect x="46" y="56" width="148" height="70" rx="12" fill="url(#gb)" stroke="#5a4535" stroke-width="2"/>' +
+        '<rect x="46" y="56" width="148" height="18" rx="9" fill="' + hi + '"/>' +
+        '<rect x="96" y="48" width="34" height="10" rx="3" fill="' + body2 + '" stroke="#5a4535"/>' +
+        '<rect x="58" y="46" width="16" height="10" rx="3" fill="' + c + '"/>' +
+        '<circle cx="112" cy="92" r="26" fill="#1b1310" stroke="#5a4535" stroke-width="2"/>' +
+        '<circle cx="112" cy="92" r="19" fill="url(#gl)"/>' +
+        '<circle cx="112" cy="92" r="19" fill="none" stroke="' + c + '" stroke-width="2" opacity=".85"/>' +
+        '<circle cx="104" cy="85" r="4" fill="#fff" opacity=".35"/>' +
+        '<rect x="152" y="80" width="30" height="10" rx="3" fill="' + c + '" opacity=".7"/>' +
+        '<rect x="152" y="96" width="22" height="7" rx="3" fill="#5a4535"/>' +
+        '<rect x="58" y="86" width="22" height="22" rx="5" fill="#241a14" stroke="#5a4535"/>');
+    },
+    mediumformat: function (c) {
+      return wrap('<rect x="34" y="40" width="172" height="96" rx="10" fill="url(#gb)" stroke="#5a4535" stroke-width="2"/>' +
+        '<rect x="34" y="40" width="172" height="18" rx="9" fill="' + hi + '"/>' +
+        '<rect x="50" y="30" width="18" height="12" rx="3" fill="' + c + '"/>' +
+        '<circle cx="120" cy="88" r="40" fill="#1b1310" stroke="#5a4535" stroke-width="2"/>' +
+        '<circle cx="120" cy="88" r="30" fill="url(#gl)"/>' +
+        '<circle cx="120" cy="88" r="30" fill="none" stroke="' + c + '" stroke-width="2.5" opacity=".85"/>' +
+        '<circle cx="108" cy="76" r="6" fill="#fff" opacity=".35"/>' +
+        '<rect x="44" y="70" width="30" height="48" rx="6" fill="#241a14" stroke="#5a4535"/>' +
+        '<rect x="170" y="74" width="26" height="8" rx="3" fill="' + c + '" opacity=".6"/>');
+    },
+    action: function (c) {
+      return wrap('<rect x="66" y="42" width="108" height="86" rx="14" fill="url(#gb)" stroke="#5a4535" stroke-width="2"/>' +
+        '<rect x="66" y="42" width="108" height="18" rx="9" fill="' + hi + '"/>' +
+        '<rect x="80" y="58" width="36" height="36" rx="7" fill="#1b1310" stroke="#5a4535" stroke-width="2"/>' +
+        '<circle cx="98" cy="76" r="12" fill="url(#gl)"/>' +
+        '<circle cx="98" cy="76" r="12" fill="none" stroke="' + c + '" stroke-width="2"/>' +
+        '<rect x="124" y="60" width="40" height="30" rx="4" fill="#0d0908"/>' +
+        '<rect x="127" y="63" width="34" height="24" rx="2" fill="' + c + '" opacity=".3"/>' +
+        '<rect x="80" y="104" width="84" height="12" rx="4" fill="' + body2 + '" stroke="#5a4535"/>' +
+        '<rect x="90" y="34" width="22" height="10" rx="3" fill="' + c + '" opacity=".8"/>');
+    },
+    cam360: function (c) {
+      return wrap('<rect x="92" y="60" width="56" height="78" rx="10" fill="url(#gb)" stroke="#5a4535" stroke-width="2"/>' +
+        '<rect x="92" y="60" width="56" height="16" rx="8" fill="' + hi + '"/>' +
+        '<circle cx="120" cy="44" r="26" fill="#1b1310" stroke="#5a4535" stroke-width="2"/>' +
+        '<circle cx="120" cy="44" r="18" fill="url(#gl)"/>' +
+        '<circle cx="120" cy="44" r="18" fill="none" stroke="' + c + '" stroke-width="2.5"/>' +
+        '<ellipse cx="120" cy="44" rx="8" ry="18" fill="none" stroke="' + c + '" stroke-width="1" opacity=".5"/>' +
+        '<rect x="104" y="86" width="32" height="26" rx="4" fill="#0d0908"/>' +
+        '<rect x="107" y="89" width="26" height="20" rx="2" fill="' + c + '" opacity=".3"/>' +
+        '<circle cx="120" cy="124" r="5" fill="' + c + '"/>');
+    },
+    zoom: function (c) {
+      return wrap('<rect x="56" y="54" width="128" height="52" rx="8" fill="url(#gb)" stroke="#5a4535" stroke-width="2"/>' +
+        '<rect x="56" y="54" width="128" height="12" rx="6" fill="' + hi + '"/>' +
+        '<rect x="70" y="50" width="34" height="60" rx="6" fill="#2a1c14" stroke="#5a4535"/>' +
+        '<g stroke="#5a4535" stroke-width="2">' + Array.apply(null, Array(7)).map(function (_, i) { return '<line x1="' + (74 + i * 4.5) + '" y1="54" x2="' + (74 + i * 4.5) + '" y2="106"/>'; }).join("") + '</g>' +
+        '<rect x="118" y="48" width="40" height="64" rx="6" fill="#2a1c14" stroke="#5a4535"/>' +
+        '<g stroke="#5a4535" stroke-width="2">' + Array.apply(null, Array(8)).map(function (_, i) { return '<line x1="' + (122 + i * 4.5) + '" y1="52" x2="' + (122 + i * 4.5) + '" y2="108"/>'; }).join("") + '</g>' +
+        '<rect x="106" y="56" width="10" height="48" rx="2" fill="' + c + '" opacity=".85"/>' +
+        '<ellipse cx="184" cy="80" rx="12" ry="30" fill="#1b1310" stroke="#5a4535" stroke-width="2"/>' +
+        '<ellipse cx="184" cy="80" rx="8" ry="22" fill="url(#gl)"/>' +
+        '<ellipse cx="184" cy="80" rx="8" ry="22" fill="none" stroke="' + c + '" stroke-width="1.5" opacity=".8"/>' +
+        '<ellipse cx="56" cy="80" rx="8" ry="24" fill="#2a1c14" stroke="#5a4535"/>' +
+        '<rect x="46" y="66" width="12" height="28" rx="2" fill="#8a8a8a"/>');
+    },
+    prime: function (c) {
+      return wrap('<rect x="72" y="52" width="96" height="56" rx="8" fill="url(#gb)" stroke="#5a4535" stroke-width="2"/>' +
+        '<rect x="72" y="52" width="96" height="12" rx="6" fill="' + hi + '"/>' +
+        '<rect x="96" y="46" width="48" height="68" rx="6" fill="#2a1c14" stroke="#5a4535"/>' +
+        '<g stroke="#5a4535" stroke-width="2">' + Array.apply(null, Array(9)).map(function (_, i) { return '<line x1="' + (100 + i * 4.7) + '" y1="50" x2="' + (100 + i * 4.7) + '" y2="110"/>'; }).join("") + '</g>' +
+        '<rect x="84" y="56" width="8" height="48" rx="2" fill="' + c + '" opacity=".85"/>' +
+        '<ellipse cx="168" cy="80" rx="12" ry="30" fill="#1b1310" stroke="#5a4535" stroke-width="2"/>' +
+        '<ellipse cx="168" cy="80" rx="8" ry="23" fill="url(#gl)"/>' +
+        '<ellipse cx="168" cy="80" rx="8" ry="23" fill="none" stroke="' + c + '" stroke-width="1.5" opacity=".8"/>' +
+        '<ellipse cx="72" cy="80" rx="8" ry="24" fill="#2a1c14" stroke="#5a4535"/>' +
+        '<rect x="62" y="66" width="12" height="28" rx="2" fill="#8a8a8a"/>');
+    },
+    tele: function (c) {
+      return wrap('<rect x="26" y="60" width="92" height="40" rx="6" fill="url(#gb)" stroke="#5a4535" stroke-width="2"/>' +
+        '<rect x="26" y="60" width="92" height="10" rx="5" fill="' + hi + '"/>' +
+        '<path d="M118 56 h70 l24 -12 v72 l-24 -12 h-70z" fill="url(#gb)" stroke="#5a4535" stroke-width="2"/>' +
+        '<rect x="40" y="56" width="30" height="48" rx="5" fill="#2a1c14" stroke="#5a4535"/>' +
+        '<g stroke="#5a4535" stroke-width="2">' + Array.apply(null, Array(6)).map(function (_, i) { return '<line x1="' + (44 + i * 4.5) + '" y1="60" x2="' + (44 + i * 4.5) + '" y2="100"/>'; }).join("") + '</g>' +
+        '<rect x="132" y="50" width="44" height="60" rx="5" fill="#2a1c14" stroke="#5a4535"/>' +
+        '<g stroke="#5a4535" stroke-width="2">' + Array.apply(null, Array(9)).map(function (_, i) { return '<line x1="' + (136 + i * 4.5) + '" y1="54" x2="' + (136 + i * 4.5) + '" y2="106"/>'; }).join("") + '</g>' +
+        '<rect x="76" y="62" width="8" height="36" rx="2" fill="' + c + '" opacity=".85"/>' +
+        '<rect x="94" y="100" width="24" height="18" rx="4" fill="#241a14" stroke="#5a4535"/>' +
+        '<ellipse cx="212" cy="80" rx="8" ry="36" fill="#1b1310" stroke="#5a4535" stroke-width="2"/>' +
+        '<ellipse cx="212" cy="80" rx="5" ry="28" fill="url(#gl)"/>' +
+        '<ellipse cx="212" cy="80" rx="5" ry="28" fill="none" stroke="' + c + '" stroke-width="1.5" opacity=".8"/>' +
+        '<rect x="16" y="68" width="12" height="24" rx="2" fill="#8a8a8a"/>');
+    },
+    speedlite: function (c) {
+      return wrap('<rect x="92" y="78" width="40" height="64" rx="6" fill="url(#gb)" stroke="#5a4535" stroke-width="2"/>' +
+        '<rect x="100" y="90" width="24" height="18" rx="3" fill="#0d0908"/>' +
+        '<rect x="103" y="93" width="18" height="12" rx="2" fill="' + c + '" opacity=".35"/>' +
+        '<rect x="96" y="114" width="32" height="6" rx="3" fill="#5a4535"/>' +
+        '<rect x="104" y="66" width="20" height="14" rx="3" fill="' + body2 + '" stroke="#5a4535"/>' +
+        '<rect x="70" y="26" width="110" height="44" rx="8" fill="url(#gb)" stroke="#5a4535" stroke-width="2"/>' +
+        '<rect x="70" y="26" width="110" height="10" rx="5" fill="' + hi + '"/>' +
+        '<rect x="78" y="34" width="62" height="28" rx="4" fill="#f3e4c6" opacity=".9"/>' +
+        '<rect x="78" y="34" width="62" height="28" rx="4" fill="none" stroke="' + c + '" stroke-width="2"/>' +
+        '<g stroke="#d7c29b" stroke-width="1" opacity=".6">' + Array.apply(null, Array(6)).map(function (_, i) { return '<line x1="' + (84 + i * 10) + '" y1="34" x2="' + (84 + i * 10) + '" y2="62"/>'; }).join("") + '</g>' +
+        '<rect x="148" y="38" width="24" height="20" rx="3" fill="#1b1310"/><rect x="151" y="41" width="18" height="14" rx="2" fill="' + c + '" opacity=".5"/>' +
+        '<rect x="96" y="134" width="32" height="10" rx="2" fill="#8a8a8a"/>');
+    },
+    strobe: function (c) {
+      return wrap('<rect x="56" y="54" width="112" height="76" rx="12" fill="url(#gb)" stroke="#5a4535" stroke-width="2"/>' +
+        '<rect x="56" y="54" width="112" height="14" rx="7" fill="' + hi + '"/>' +
+        '<circle cx="192" cy="92" r="30" fill="#1b1310" stroke="#5a4535" stroke-width="2"/>' +
+        '<circle cx="192" cy="92" r="22" fill="#f3e4c6" opacity=".9"/>' +
+        '<circle cx="192" cy="92" r="22" fill="none" stroke="' + c + '" stroke-width="2.5"/>' +
+        '<circle cx="192" cy="92" r="10" fill="' + c + '" opacity=".5"/>' +
+        '<rect x="70" y="76" width="44" height="28" rx="4" fill="#0d0908"/>' +
+        '<rect x="73" y="79" width="38" height="22" rx="2" fill="' + c + '" opacity=".35"/>' +
+        '<circle cx="134" cy="90" r="9" fill="' + c + '"/><circle cx="152" cy="90" r="6" fill="#5a4535"/>' +
+        '<rect x="70" y="110" width="80" height="8" rx="3" fill="#5a4535"/>' +
+        '<rect x="90" y="36" width="40" height="18" rx="5" fill="' + body2 + '" stroke="#5a4535"/>' +
+        '<rect x="104" y="130" width="16" height="16" rx="2" fill="#8a8a8a"/>');
+    },
+    led: function (c) {
+      return wrap('<rect x="54" y="30" width="132" height="92" rx="10" fill="url(#gb)" stroke="#5a4535" stroke-width="2"/>' +
+        '<rect x="62" y="38" width="116" height="76" rx="6" fill="#0d0908"/>' +
+        '<rect x="62" y="38" width="116" height="76" rx="6" fill="' + c + '" opacity=".22"/>' +
+        '<g fill="#f3e4c6" opacity=".9">' + (function () { var s = ""; for (var y = 0; y < 6; y++) for (var x = 0; x < 9; x++) s += '<circle cx="' + (70 + x * 12.5) + '" cy="' + (46 + y * 12) + '" r="3"/>'; return s; })() + '</g>' +
+        '<rect x="96" y="122" width="48" height="10" rx="3" fill="' + body2 + '" stroke="#5a4535"/>' +
+        '<rect x="114" y="132" width="12" height="14" rx="2" fill="#8a8a8a"/>' +
+        '<rect x="150" y="22" width="28" height="10" rx="3" fill="' + c + '" opacity=".8"/>');
+    },
+    trigger: function (c) {
+      return wrap('<rect x="76" y="44" width="88" height="88" rx="10" fill="url(#gb)" stroke="#5a4535" stroke-width="2"/>' +
+        '<rect x="76" y="44" width="88" height="12" rx="6" fill="' + hi + '"/>' +
+        '<rect x="86" y="56" width="68" height="40" rx="4" fill="#0d0908"/>' +
+        '<rect x="89" y="59" width="62" height="34" rx="2" fill="' + c + '" opacity=".3"/>' +
+        '<g fill="' + c + '" opacity=".9"><text x="94" y="82" font-size="14" font-family="monospace" fill="' + c + '">TTL 1/1</text></g>' +
+        '<circle cx="98" cy="112" r="7" fill="#5a4535"/><circle cx="120" cy="112" r="7" fill="' + c + '"/><circle cx="142" cy="112" r="7" fill="#5a4535"/>' +
+        '<rect x="110" y="30" width="20" height="14" rx="3" fill="' + body2 + '" stroke="#5a4535"/>' +
+        '<rect x="104" y="132" width="32" height="10" rx="2" fill="#8a8a8a"/>');
+    },
+    card: function (c) {
+      return wrap('<path d="M74 30 h74 l22 22 v78 a8 8 0 0 1 -8 8 H74 a8 8 0 0 1 -8 -8 V38 a8 8 0 0 1 8 -8z" fill="url(#gb)" stroke="#5a4535" stroke-width="2"/>' +
+        '<rect x="66" y="30" width="104" height="16" rx="8" fill="' + hi + '"/>' +
+        '<rect x="80" y="70" width="80" height="30" rx="4" fill="' + c + '" opacity=".85"/>' +
+        '<text x="120" y="91" text-anchor="middle" font-size="15" font-weight="700" font-family="sans-serif" fill="#1a1008">CFexpress</text>' +
+        '<g fill="#d4b483">' + Array.apply(null, Array(6)).map(function (_, i) { return '<rect x="' + (82 + i * 13) + '" y="112" width="8" height="18" rx="1"/>'; }).join("") + '</g>');
+    },
+    mic: function (c) {
+      return wrap('<rect x="56" y="60" width="52" height="70" rx="10" fill="url(#gb)" stroke="#5a4535" stroke-width="2"/>' +
+        '<rect x="132" y="60" width="52" height="70" rx="10" fill="url(#gb)" stroke="#5a4535" stroke-width="2"/>' +
+        '<rect x="56" y="60" width="52" height="12" rx="6" fill="' + hi + '"/><rect x="132" y="60" width="52" height="12" rx="6" fill="' + hi + '"/>' +
+        '<rect x="64" y="76" width="36" height="22" rx="3" fill="#0d0908"/><rect x="67" y="79" width="30" height="16" rx="2" fill="' + c + '" opacity=".35"/>' +
+        '<rect x="140" y="76" width="36" height="22" rx="3" fill="#0d0908"/><rect x="143" y="79" width="30" height="16" rx="2" fill="' + c + '" opacity=".35"/>' +
+        '<circle cx="82" cy="44" r="12" fill="#1b1310" stroke="' + c + '" stroke-width="2"/><circle cx="158" cy="44" r="12" fill="#1b1310" stroke="' + c + '" stroke-width="2"/>' +
+        '<rect x="80" y="56" width="4" height="6" fill="#5a4535"/><rect x="156" y="56" width="4" height="6" fill="#5a4535"/>' +
+        '<circle cx="82" cy="112" r="5" fill="' + c + '"/><circle cx="158" cy="112" r="5" fill="' + c + '"/>');
+    },
+    gimbal: function (c) {
+      return wrap('<rect x="104" y="92" width="32" height="56" rx="8" fill="url(#gb)" stroke="#5a4535" stroke-width="2"/>' +
+        '<circle cx="120" cy="112" r="7" fill="' + c + '"/>' +
+        '<rect x="112" y="70" width="16" height="24" rx="4" fill="#2a1c14" stroke="#5a4535"/>' +
+        '<path d="M120 70 v-14 h40 v-16" fill="none" stroke="#5a4535" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>' +
+        '<path d="M120 70 v-14 h40 v-16" fill="none" stroke="#3b2a1f" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>' +
+        '<rect x="130" y="18" width="60" height="30" rx="6" fill="url(#gb)" stroke="#5a4535" stroke-width="2"/>' +
+        '<circle cx="178" cy="33" r="9" fill="#1b1310" stroke="' + c + '" stroke-width="2"/>' +
+        '<rect x="138" y="26" width="20" height="14" rx="2" fill="' + c + '" opacity=".4"/>');
+    },
+    monitor: function (c) {
+      return wrap('<rect x="40" y="36" width="160" height="96" rx="8" fill="url(#gb)" stroke="#5a4535" stroke-width="2"/>' +
+        '<rect x="50" y="46" width="140" height="76" rx="3" fill="#0d0908"/>' +
+        '<rect x="50" y="46" width="140" height="76" rx="3" fill="' + c + '" opacity=".25"/>' +
+        '<path d="M50 122 L110 70 L140 96 L160 82 L190 110 V122z" fill="' + c + '" opacity=".35"/>' +
+        '<circle cx="90" cy="64" r="8" fill="#f3e4c6" opacity=".8"/>' +
+        '<rect x="100" y="132" width="40" height="8" rx="2" fill="#5a4535"/>');
+    },
+    switcher: function (c) {
+      return wrap('<rect x="36" y="50" width="168" height="70" rx="8" fill="url(#gb)" stroke="#5a4535" stroke-width="2"/>' +
+        '<g>' + (function () { var s = ""; for (var i = 0; i < 8; i++) s += '<rect x="' + (46 + i * 19) + '" y="60" width="14" height="14" rx="3" fill="' + (i === 2 ? c : "#5a4535") + '"/>'; return s; })() + '</g>' +
+        '<g>' + (function () { var s = ""; for (var i = 0; i < 8; i++) s += '<rect x="' + (46 + i * 19) + '" y="80" width="14" height="14" rx="3" fill="' + (i === 5 ? "#f3e4c6" : "#3b2a1f") + '" stroke="#5a4535"/>'; return s; })() + '</g>' +
+        '<rect x="46" y="100" width="100" height="10" rx="3" fill="#2a1c14" stroke="#5a4535"/><rect x="156" y="98" width="38" height="14" rx="3" fill="' + c + '" opacity=".6"/>');
+    },
+    software: function (c) {
+      return wrap('<rect x="48" y="36" width="144" height="96" rx="12" fill="url(#gb)" stroke="#5a4535" stroke-width="2"/>' +
+        '<rect x="48" y="36" width="144" height="14" rx="7" fill="' + hi + '"/>' +
+        '<circle cx="60" cy="43" r="3" fill="#ff6b6b"/><circle cx="70" cy="43" r="3" fill="#f2c66d"/><circle cx="80" cy="43" r="3" fill="#7fd8a4"/>' +
+        '<rect x="60" y="60" width="120" height="56" rx="4" fill="#0d0908"/>' +
+        '<path d="M120 70 v26 M108 86 l12 12 l12 -12" fill="none" stroke="' + c + '" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>' +
+        '<rect x="70" y="104" width="100" height="6" rx="3" fill="' + c + '" opacity=".5"/>');
+    },
+    box: function (c) {
+      return wrap('<rect x="60" y="46" width="120" height="80" rx="12" fill="url(#gb)" stroke="#5a4535" stroke-width="2"/>' +
+        '<rect x="60" y="46" width="120" height="14" rx="7" fill="' + hi + '"/>' +
+        '<circle cx="120" cy="88" r="20" fill="none" stroke="' + c + '" stroke-width="4"/>' +
+        '<circle cx="120" cy="88" r="6" fill="' + c + '"/>');
+    },
+    windows: function (c) {
+      return '<svg viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg"><rect x="4" y="4" width="19" height="19" rx="2" fill="' + c + '"/><rect x="25" y="4" width="19" height="19" rx="2" fill="' + c + '" opacity=".85"/><rect x="4" y="25" width="19" height="19" rx="2" fill="' + c + '" opacity=".85"/><rect x="25" y="25" width="19" height="19" rx="2" fill="' + c + '" opacity=".7"/></svg>';
+    }
+  };
+
+  function render(item, color) {
+    var kind = pick(item);
+    var fn = ART[kind] || ART.box;
+    return fn(color || item.brandColor || "#e3a85c");
+  }
+  global.Art = { render: render, pick: pick, kinds: ART };
+})(window);
+
+</script>
+<script>window.CFH_STATIC = { catalog: "catalog.web.json" };</script>
+<script>
+/* Camera Firmware Hub — front-end. Made for B&H · Created by ZAYS.us */
+(function () {
+  "use strict";
+  var $ = function (s, el) { return (el || document).querySelector(s); };
+  var $$ = function (s, el) { return Array.prototype.slice.call((el || document).querySelectorAll(s)); };
+  var esc = function (s) { return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); };
+
+  var state = {
+    items: [], brands: [], brandColors: {}, categories: {}, system: null, settings: {},
+    view: "camera", category: "camera", brand: null, q: "", sort: "brand", sel: -1,
+    jobs: [], usbJobs: [], files: [], volumes: [], disks: [], win: { versions: [], tools: [] },
+    currentItem: null, pollTimer: null
+  };
+
+  // ------------------------------------------------------------------ api
+  // STATIC = "web edition": no Python server, catalog comes from a JSON file next to the page.
+  var STATIC = window.CFH_STATIC || null;
+  var EMBED = /[?&]embed=1/.test(location.search) || !!(window.CFH_STATIC && window.CFH_STATIC.embed);
+  function parseQuery(p) { var out = {}; (p.split("?")[1] || "").split("&").forEach(function (kv) { if (!kv) return; var i = kv.indexOf("="); out[decodeURIComponent(kv.slice(0, i))] = decodeURIComponent(kv.slice(i + 1)); }); return out; }
+  function staticApi() {
+    var data = null, settings = {};
+    try { settings = JSON.parse(localStorage.getItem("cfh-settings") || "{}") || {}; } catch (e) { settings = {}; }
+    function load() { return data ? Promise.resolve(data) : fetch(STATIC.catalog, { cache: "no-store" }).then(function (r) { return r.json(); }).then(function (d) { data = d; return d; }); }
+    function os() { var p = (navigator.platform || "") + " " + (navigator.userAgent || ""); return /Win/i.test(p) ? "win" : /Mac|iPhone|iPad/i.test(p) ? "mac" : "linux"; }
+    return {
+      get: function (p) {
+        var path = p.split("?")[0], q = parseQuery(p);
+        if (path === "/api/system") return load().then(function (d) { return { os: os(), platform: navigator.platform || "browser", python: "web edition", app: "Camera Firmware Hub", version: d.version, downloadDir: "your browser's Downloads folder", stats: d.stats, settings: Object.assign({ theme: "espresso" }, settings), web: true }; });
+        if (path === "/api/catalog") return load().then(function (d) { return { items: d.items, brands: d.brands, categories: d.categories, brandColors: d.brandColors }; });
+        if (path === "/api/jobs") return Promise.resolve({ downloads: [], usb: [] });
+        if (path === "/api/files") return Promise.resolve({ files: [] });
+        if (path === "/api/volumes") return Promise.resolve({ volumes: [] });
+        if (path === "/api/disks") return Promise.resolve({ disks: [] });
+        if (path === "/api/windows/versions") return load().then(function (d) { return { versions: d.windows.versions, tools: d.windows.tools }; });
+        if (path === "/api/windows/languages") return load().then(function (d) { var v = d.windows.versions.filter(function (x) { return x.id === q.version; })[0]; return { ok: false, error: "Direct Microsoft links can only be resolved by the desktop app (Microsoft ties each link to the computer that asked). On Microsoft's page, pick the edition and language and download from there.", page: v && v.page }; });
+        if (path === "/api/windows/tool") return load().then(function (d) { var t = d.windows.tools.filter(function (x) { return x.id === q.id; })[0]; return { ok: true, url: t ? t.url : "", page: true }; });
+        return Promise.resolve({ ok: false, error: "Not available in the web edition" });
+      },
+      post: function (p, body) {
+        body = body || {};
+        if (p.indexOf("/api/check/") === 0) return load().then(function (d) { var it = d.items.filter(function (x) { return x.id === p.split("/")[3]; })[0]; var fw = (it && it.firmware) || {}; return { ok: false, blocked: true, error: "Live version checks run in the desktop app. Open the official page to compare against " + (fw.version || "the version on file") + ".", url: fw.checkUrl || fw.page, current: fw.version }; });
+        if (p === "/api/open-url") { openTab(body.url); return Promise.resolve({ ok: true }); }
+        if (p === "/api/settings") { Object.assign(settings, body); try { localStorage.setItem("cfh-settings", JSON.stringify(settings)); } catch (e) {} return Promise.resolve(Object.assign({ theme: "espresso" }, settings)); }
+        return Promise.resolve({ ok: false, error: "This needs the desktop app (it works with your local disks and memory cards)." });
+      }
+    };
+  }
+  function openTab(url) { if (!url) return; var a = document.createElement("a"); a.href = url; a.target = "_blank"; a.rel = "noopener"; document.body.appendChild(a); a.click(); setTimeout(function () { a.remove(); }, 0); }
+  var api = STATIC ? staticApi() : {
+    get: function (p) { return fetch(p, { cache: "no-store" }).then(function (r) { return r.json(); }); },
+    post: function (p, body) { return fetch(p, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body || {}) }).then(function (r) { return r.json(); }); }
+  };
+  // External links: a real anchor in the web edition (sandbox-safe), a server call in the desktop app.
+  function extBtn(url, cls, inner, id) {
+    if (!url) return "";
+    if (STATIC) return '<a class="btn ' + (cls || "") + '" href="' + esc(url) + '" target="_blank" rel="noopener"' + (id ? ' id="' + id + '"' : "") + '>' + inner + '</a>';
+    return '<button class="btn ' + (cls || "") + '" data-url="' + esc(url) + '"' + (id ? ' id="' + id + '"' : "") + '>' + inner + '</button>';
+  }
+
+  // ------------------------------------------------------------------ icons
+  var I = {
+    download: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12M7 10l5 5 5-5M4 19h16"/></svg>',
+    bolt: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2 4 14h7l-1 8 9-12h-7z"/></svg>',
+    link: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></svg>',
+    refresh: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg>',
+    card: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 3h7l5 5v13H7z"/><path d="M10 15h1M13 15h1M16 15h1"/></svg>',
+    app: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="14" rx="2"/><path d="M8 21h8"/></svg>',
+    installer: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M12 8v8M8 12l4 4 4-4"/></svg>',
+    web: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg>',
+    check: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="m5 12 5 5 9-10"/></svg>',
+    x: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 6l12 12M18 6 6 18"/></svg>',
+    folder: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>',
+    usb: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="9" width="12" height="8" rx="2"/><path d="M16 11h4v4h-4"/></svg>',
+    mac: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M16.4 12.6c0-2.4 2-3.5 2.1-3.6-1.1-1.7-2.9-1.9-3.5-1.9-1.5-.2-2.9.9-3.7.9-.8 0-1.9-.9-3.2-.8-1.6 0-3.1 1-4 2.4-1.7 3-.4 7.3 1.2 9.7.8 1.2 1.8 2.5 3.1 2.4 1.2 0 1.7-.8 3.2-.8s1.9.8 3.2.8c1.3 0 2.2-1.2 3-2.4.9-1.4 1.3-2.7 1.3-2.8-.1 0-2.7-1-2.7-3.9zM14 5.5c.7-.8 1.1-2 1-3.1-1 0-2.2.7-2.9 1.5-.6.7-1.2 1.9-1 3 1.1.1 2.2-.6 2.9-1.4z"/></svg>',
+    win: '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="3" y="3" width="8" height="8" rx="1"/><rect x="13" y="3" width="8" height="8" rx="1"/><rect x="3" y="13" width="8" height="8" rx="1"/><rect x="13" y="13" width="8" height="8" rx="1"/></svg>',
+    any: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7h16v10H4z"/><path d="M8 21h8"/></svg>',
+    warn: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3 2 20h20z"/><path d="M12 9v5M12 17h.01"/></svg>',
+    search: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>'
+  };
+  var METHOD_LABEL = { installer: ["Installer app", I.installer], card: ["Memory card file", I.card], app: ["Companion app", I.app], page: ["Official website", I.web], none: ["No firmware yet", I.check] };
+
+  // ------------------------------------------------------------------ toast
+  function toast(msg, kind, ms) {
+    var el = document.createElement("div");
+    el.className = "toast " + (kind || "");
+    el.innerHTML = (kind === "good" ? I.check : kind === "bad" ? I.warn : "") + "<span>" + esc(msg) + "</span>";
+    $("#toasts").appendChild(el);
+    setTimeout(function () { el.classList.add("out"); setTimeout(function () { el.remove(); }, 320); }, ms || 3600);
+  }
+
+  // ------------------------------------------------------------------ search
+  function norm(s) { return String(s || "").toLowerCase().replace(/ø/g, "o").replace(/[^a-z0-9.+/ ]+/g, " ").replace(/\s+/g, " ").trim(); }
+  function compact(s) { return norm(s).replace(/[^a-z0-9]/g, ""); }
+  function index(it) {
+    var hay = [it.brand, it.model, it.fullName, (it.aliases || []).join(" "), (it.tags || []).join(" "), it.category].join(" ");
+    it._compact = compact(hay);
+    it._model = compact(it.brand + " " + it.model);
+    it._modelOnly = compact(it.model);
+    it._aliases = (it.aliases || []).map(compact);
+  }
+  function fuzzyIn(t, hay) { if (t.length < 4) return false; for (var i = 0; i < t.length; i++) if (hay.indexOf(t.slice(0, i) + t.slice(i + 1)) >= 0) return true; return false; }
+  function score(it, q) {
+    var qc = compact(q); if (!qc) return 1;
+    var s = 0;
+    if (qc === it._model || qc === it._modelOnly) s += 1000;
+    if (it._aliases.indexOf(qc) >= 0) s += 900;
+    if (it._model.indexOf(qc) === 0 || it._modelOnly.indexOf(qc) === 0) s += 400;
+    if (it._model.indexOf(qc) >= 0) s += 250;
+    if (it._aliases.some(function (a) { return a.indexOf(qc) === 0; })) s += 220;
+    if (it._compact.indexOf(qc) >= 0) s += 120;
+    var toks = norm(q).split(" ").map(function (t) { return t.replace(/[^a-z0-9]/g, ""); }).filter(Boolean);
+    var matched = 0;
+    toks.forEach(function (t) {
+      if (it._model.indexOf(t) >= 0) { s += 60; matched++; }
+      else if (it._compact.indexOf(t) >= 0) { s += 25; matched++; }
+      else if (fuzzyIn(t, it._compact)) { s += 8; matched++; }
+    });
+    if (!matched) return 0;
+    if (matched === toks.length) s += 40;
+    if ((it.firmware || {}).confidence === "verified") s += 3;
+    return s;
+  }
+  function search(q, category, brand, limit) {
+    var out = [];
+    state.items.forEach(function (it) {
+      if (category && it.category !== category) return;
+      if (brand && it.brand !== brand) return;
+      var s = score(it, q);
+      if (s > 0) out.push([s, it]);
+    });
+    out.sort(function (a, b) { return b[0] - a[0] || (a[1].brand + a[1].model).localeCompare(b[1].brand + b[1].model); });
+    return out.slice(0, limit || 9999).map(function (r) { return r[1]; });
+  }
+
+  // ------------------------------------------------------------------ helpers
+  function color(it) { return it.brandColor || state.brandColors[it.brand] || "#e3a85c"; }
+  function fw(it) { return it.firmware || {}; }
+  function osOf() { return (state.system && state.system.os) || "mac"; }
+  function human(n) { if (!n && n !== 0) return "?"; var u = ["B", "KB", "MB", "GB", "TB"], i = 0; n = +n; while (n >= 1024 && i < 4) { n /= 1024; i++; } return (i ? n.toFixed(1) : n) + " " + u[i]; }
+  function fmtDate(d) { if (!d) return ""; return d; }
+  function steps(howTo) {
+    if (!howTo) return [];
+    if (Array.isArray(howTo)) return howTo;
+    var parts = String(howTo).split(/\s*(?:^|\s)\d{1,2}[\)\.]\s+/).map(function (s) { return s.trim(); }).filter(Boolean);
+    return parts.length > 1 ? parts : [howTo];
+  }
+  function osIcon(os) { return os === "mac" ? I.mac : os === "win" ? I.win : I.any; }
+  function osName(os) { return os === "mac" ? "macOS" : os === "win" ? "Windows" : "Any"; }
+  function typeLabel(t) { return { installer: "Installer", cardfile: "Card file", app: "App", page: "Web page", zip: "Archive" }[t] || t; }
+  function vshort(v) { v = String(v || "").replace(/^(ver(sion)?\.?|v)\s*/i, ""); return /^\d/.test(v) ? "v" + v : v; }
+  function versionBadge(it) {
+    var v = fw(it).version;
+    if (!v) return '<span class="ver none">' + (fw(it).method === "none" ? "no firmware" : "see site") + '</span>';
+    return '<span class="ver"><span class="conf ' + esc(fw(it).confidence || "unknown") + '"></span>' + esc(vshort(v)) + '</span>';
+  }
+  function openExternal(url) { if (!url) return; if (STATIC) { openTab(url); return; } api.post("/api/open-url", { url: url }).then(function () { toast("Opened in your browser"); }); }
+
+  // ------------------------------------------------------------------ routing / views
+  var CAT_VIEWS = { camera: ["Find it. <em>Update it.</em> Done.", "Type a camera name or model code and the latest firmware is one click away."],
+    lens: ["Lenses, <em>sharp</em> and current.", "Native and third-party lenses: firmware through the camera, a USB dock, or the maker's app."],
+    flash: ["Flashes &amp; lights, <em>in sync</em>.", "Godox, Profoto, Westcott, Aputure, Nanlite and the camera-brand speedlites."],
+    accessory: ["The <em>rest of the bag</em>.", "Card tools, monitors, mics, gimbals and companion software."] };
+  function setView(view, push) {
+    state.view = view;
+    $$("#tabs button").forEach(function (b) { b.classList.toggle("active", b.dataset.view === view); });
+    $$(".view").forEach(function (v) { v.classList.remove("active"); });
+    var isCat = CAT_VIEWS[view];
+    if (isCat) {
+      state.category = view;
+      state.brand = null;
+      $("#hero-title").innerHTML = isCat[0];
+      $("#hero-sub").innerHTML = isCat[1];
+      $("#view-catalog").classList.remove("active"); void $("#view-catalog").offsetWidth; $("#view-catalog").classList.add("active");
+      renderBrandChips(); renderGrid();
+      setTimeout(function () { $("#q").focus(); }, 50);
+    } else {
+      var el = $("#view-" + view); el.classList.remove("active"); void el.offsetWidth; el.classList.add("active");
+      if (view === "windows") initWindows();
+      if (view === "downloads") { refreshJobs(); refreshFiles(); }
+      if (view === "about") renderAbout();
+    }
+    if (push !== false) history.replaceState(null, "", "#" + view);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+    if (EMBED && window.parent !== window) { try { window.parent.postMessage({ type: "cfh:view", view: view }, "*"); } catch (e) {} }
+  }
+  window.addEventListener("message", function (e) {
+    var m = e.data || {};
+    if (!m || m.type !== "cfh:nav") return;
+    if (m.view) { closeDrawer(); closeModal(); setView(m.view); }
+    if (m.query != null) { var q = $("#q"); q.value = m.query; state.q = m.query.trim(); $("#search").classList.toggle("has-text", !!state.q); renderGrid(); if (m.focus) q.focus(); }
+    if (m.accent) document.documentElement.dataset.accent = m.accent;
+  });
+  function route() {
+    var h = (location.hash || "#camera").slice(1);
+    if (h.indexOf("item/") === 0) { var id = h.slice(5); var it = state.items.filter(function (i) { return i.id === id; })[0]; if (it) { setView(it.category, false); openItem(it); return; } }
+    setView(CAT_VIEWS[h] || ["windows", "downloads", "about"].indexOf(h) >= 0 ? h : "camera", false);
+  }
+
+  // ------------------------------------------------------------------ catalog rendering
+  function renderBrandChips() {
+    var counts = {};
+    state.items.forEach(function (it) { if (it.category === state.category) counts[it.brand] = (counts[it.brand] || 0) + 1; });
+    var brands = Object.keys(counts).sort(function (a, b) { return counts[b] - counts[a] || a.localeCompare(b); });
+    var html = '<span class="label">Brands</span><button class="chip ' + (state.brand ? "" : "active") + '" data-brand=""><span class="dot" style="--c:var(--accent)"></span>All <span class="n">' + Object.keys(counts).reduce(function (a, k) { return a + counts[k]; }, 0) + '</span></button>';
+    brands.forEach(function (b) {
+      html += '<button class="chip ' + (state.brand === b ? "active" : "") + '" data-brand="' + esc(b) + '" style="--c:' + esc(state.brandColors[b] || "#e3a85c") + '"><span class="dot"></span>' + esc(b) + ' <span class="n">' + counts[b] + '</span></button>';
+    });
+    $("#brand-filters").innerHTML = html;
+    $$("#brand-filters .chip").forEach(function (c) { c.addEventListener("click", function () { state.brand = c.dataset.brand || null; renderBrandChips(); renderGrid(); }); });
+  }
+  var io = new IntersectionObserver(function (entries) { entries.forEach(function (e) { if (e.isIntersecting) { e.target.classList.add("in"); io.unobserve(e.target); } }); }, { rootMargin: "60px" });
+  function sortItems(list) {
+    var s = state.sort;
+    if (s === "model") list.sort(function (a, b) { return a.model.localeCompare(b.model); });
+    else if (s === "price") list.sort(function (a, b) { return (a.priceUSD || 1e9) - (b.priceUSD || 1e9); });
+    else if (s === "newest") list.sort(function (a, b) { return String(fw(b).date || "").localeCompare(String(fw(a).date || "")); });
+    else if (!state.q) list.sort(function (a, b) { return a.brand.localeCompare(b.brand) || a.model.localeCompare(b.model, undefined, { numeric: true }); });
+    return list;
+  }
+  function renderGrid() {
+    var list = sortItems(search(state.q, state.category, state.brand));
+    var grid = $("#grid");
+    grid.innerHTML = "";
+    $("#empty").classList.toggle("hidden", list.length > 0);
+    $("#result-count").textContent = list.length + " " + (state.categories[state.category] || "items").toLowerCase() + (state.q ? ' for "' + state.q + '"' : "") + (state.brand ? " · " + state.brand : "");
+    var frag = document.createDocumentFragment();
+    list.forEach(function (it, i) {
+      var c = color(it), f = fw(it);
+      var el = document.createElement("article");
+      el.className = "card"; el.style.setProperty("--c", c); el.style.transitionDelay = Math.min(i, 12) * 35 + "ms";
+      var m = METHOD_LABEL[f.method] || METHOD_LABEL.page;
+      el.innerHTML =
+        '<div class="art">' + artFor(it) + '<div class="tagline"><span class="btag" style="--c:' + c + '">' + esc(it.brand) + '</span></div></div>' +
+        '<div class="body"><h3>' + esc(it.model) + '</h3><div class="full">' + esc(it.fullName || "") + '</div>' +
+        '<div class="row">' + versionBadge(it) + '<span class="method">' + m[1] + esc(f.updateApp ? m[0] + " · " + f.updateApp : m[0]) + '</span></div>' +
+        '<div class="row">' + (it.tags || []).slice(0, 4).map(function (t) { return '<span class="tag">' + esc(t) + '</span>'; }).join("") + '</div>' +
+        '<div class="foot"><button class="btn primary sm act-update">' + I.bolt + ' Update now</button><button class="btn sm ghost act-details">Details</button>' + (it.priceUSD ? '<span class="price">$' + it.priceUSD.toLocaleString() + '</span>' : "") + '</div></div>';
+      el.addEventListener("click", function (e) { if (e.target.closest(".act-update")) { openUpdate(it); } else { openItem(it); } });
+      frag.appendChild(el); io.observe(el);
+    });
+    grid.appendChild(frag);
+  }
+  function artFor(it) {
+    if (it.image) return '<img src="' + esc(it.image) + '" alt="" loading="lazy" onerror="this.outerHTML=Art.render(' + esc(JSON.stringify({ category: it.category, tags: it.tags, model: it.model })) + ',\'' + color(it) + '\')">';
+    return Art.render(it, color(it));
+  }
+
+  // ------------------------------------------------------------------ suggestions
+  function renderSuggest() {
+    var box = $("#suggest");
+    if (!state.q) { box.classList.remove("open"); box.innerHTML = ""; return; }
+    var list = search(state.q, null, null, 8);
+    if (!list.length) { box.innerHTML = '<div class="empty">Nothing matches "' + esc(state.q) + '". Try a model code or brand.</div>'; box.classList.add("open"); return; }
+    box.innerHTML = list.map(function (it, i) {
+      return '<div class="row ' + (i === state.sel ? "sel" : "") + '" data-id="' + esc(it.id) + '"><div class="thumb">' + Art.render(it, color(it)) + '</div><div class="t"><b>' + esc(it.brand + " " + it.model) + '</b><span>' + esc(state.categories[it.category] || it.category) + ' · ' + esc(it.fullName || "") + '</span></div><span class="ver">' + (fw(it).version ? esc(vshort(fw(it).version)) : "") + '</span></div>';
+    }).join("");
+    box.classList.add("open");
+    $$(".row", box).forEach(function (r) { r.addEventListener("mousedown", function (e) { e.preventDefault(); var it = byId(r.dataset.id); closeSuggest(); if (it) { setView(it.category); openItem(it); } }); });
+  }
+  function closeSuggest() { $("#suggest").classList.remove("open"); state.sel = -1; }
+  function byId(id) { return state.items.filter(function (i) { return i.id === id; })[0]; }
+
+  // ------------------------------------------------------------------ drawer (details)
+  function openItem(it) {
+    state.currentItem = it;
+    var f = fw(it), c = color(it), m = METHOD_LABEL[f.method] || METHOD_LABEL.page;
+    var dls = f.downloads || [];
+    var d = $("#drawer");
+    d.innerHTML =
+      '<div class="hero-art" style="--c:' + c + '">' + artFor(it) + '<button class="icon-btn close" id="drawer-close">' + I.x + '</button></div>' +
+      '<div class="content">' +
+      '<span class="btag" style="--c:' + c + '">' + esc(it.brand) + '</span>' +
+      '<h2>' + esc(it.model) + '</h2><div class="fullname">' + esc(it.fullName || "") + (it.released ? ' · released ' + esc(it.released) : "") + (it.priceUSD ? ' · about $' + it.priceUSD.toLocaleString() : "") + '</div>' +
+      '<div class="tags">' + (it.tags || []).map(function (t) { return '<span class="tag">' + esc(t) + '</span>'; }).join("") + (it.aliases || []).slice(0, 4).map(function (t) { return '<span class="tag" style="opacity:.7">' + esc(t) + '</span>'; }).join("") + '</div>' +
+      (it.summary ? '<p class="summary">' + esc(it.summary) + '</p>' : "") +
+      '<div class="actions"><button class="btn primary" id="d-update">' + I.bolt + ' Update now</button><button class="btn" id="d-check">' + I.refresh + ' Check for newer</button>' + extBtn(f.page, "ghost", I.web + " Official page", "d-page") + '</div>' +
+      '<div class="section"><h4>Latest firmware <span class="right">' + (f.verified ? "verified " + esc(f.verified) : esc(f.confidence || "unknown")) + ' <span class="conf ' + esc(f.confidence || "unknown") + '"></span></span></h4>' +
+      '<div class="fw-head"><span class="big">' + (f.version ? esc(f.version) : (f.method === "none" ? "—" : "?")) + '</span><div class="meta">' + (f.date ? "Released " + esc(f.date) + "<br>" : "") + m[1] + " " + esc(m[0]) + (f.updateApp ? " · " + esc(f.updateApp) : "") + '</div></div>' +
+      (f.notes ? '<p class="fw-notes">' + esc(f.notes) + '</p>' : "") +
+      (f.method === "none" && !f.version ? '<div class="notice">The maker has not published a firmware update for this product yet. The official page is linked above in case that changes.</div>' : "") +
+      '<div id="check-out"></div></div>' +
+      (steps(f.howTo).length ? '<div class="section"><h4>How to install</h4><ol class="howto">' + steps(f.howTo).map(function (s) { return "<li>" + esc(s) + "</li>"; }).join("") + '</ol></div>' : "") +
+      (dls.length ? '<div class="section"><h4>Downloads</h4><div class="dl-list">' + dls.map(function (dl, i) {
+        return '<div class="dl-row"><span class="os" title="' + osName(dl.os) + '">' + osIcon(dl.os) + '</span><div class="t"><b>' + esc(dl.filename || dl.url) + '</b><span>' + esc(typeLabel(dl.type)) + (dl.sizeMB ? " · " + dl.sizeMB + " MB" : "") + ' · ' + osName(dl.os) + '</span></div>' +
+          (dl.type === "page" || STATIC ? extBtn(dl.url || f.page, "sm", (dl.type === "page" ? I.web + " Open" : I.download + " Get")) : '<button class="btn sm dl-get" data-i="' + i + '">' + I.download + ' Get</button>') + '</div>';
+      }).join("") + '</div></div>' : "") +
+      '<div class="section"><h4>Specs</h4><div class="specs">' + Object.keys(it.specs || {}).map(function (k) { return '<div><span>' + esc(k) + '</span>' + esc(it.specs[k]) + '</div>'; }).join("") + '</div></div>' +
+      '</div>';
+    $("#drawer-close").onclick = closeDrawer;
+    $("#d-update").onclick = function () { openUpdate(it); };
+    if (!STATIC && $("#d-page")) $("#d-page").onclick = function () { openExternal(f.page); };
+    $("#d-check").onclick = function () { checkNewer(it, $("#check-out"), $("#d-check")); };
+    $$(".dl-get", d).forEach(function (b) { b.onclick = function () { startDownload(it, dls[+b.dataset.i]); }; });
+
+    d.classList.add("open"); $("#scrim").classList.add("open");
+    history.replaceState(null, "", "#item/" + it.id);
+  }
+  function closeDrawer() { $("#drawer").classList.remove("open"); $("#scrim").classList.remove("open"); if (location.hash.indexOf("#item/") === 0) history.replaceState(null, "", "#" + state.view); }
+
+  function checkNewer(it, out, btn) {
+    out.innerHTML = '<div class="check-result"><span class="spin" style="display:inline-block;width:12px;height:12px;border:2px solid var(--accent);border-right-color:transparent;border-radius:50%;animation:rot .8s linear infinite;vertical-align:-2px;margin-right:8px"></span>Reading the official page…</div>';
+    if (btn) btn.disabled = true;
+    api.post("/api/check/" + it.id).then(function (r) {
+      if (btn) btn.disabled = false;
+      if (!r.ok) { out.innerHTML = '<div class="check-result ' + (r.blocked ? "" : "err") + '">' + I.warn + ' ' + esc(r.error) + (r.url ? ' <button class="btn sm" style="margin-left:8px" data-url="' + esc(r.url) + '">' + I.web + ' Open the page</button>' : "") + '</div>'; return; }
+      var cls = r.isNewer ? "newer" : (r.isSame ? "same" : "");
+      var head = r.isNewer ? "<b>Newer version spotted: " + esc(r.detected) + "</b> — the page mentions a version above " + esc(r.current || "?") + ". Open the official page to get it."
+        : r.isSame ? "<b>Up to date.</b> The official page still shows " + esc(r.detected) + "."
+        : r.detected ? "The page mentions <b>" + esc(r.detected) + "</b>; catalog has " + esc(r.current || "nothing") + ". Verify on the page." : (r.jsRendered ? "The page is rendered by JavaScript so the version couldn't be read here. Open it to check." : "No version string found on the page.");
+      out.innerHTML = '<div class="check-result ' + cls + '">' + head + (r.candidates && r.candidates.length ? '<div class="cands">' + r.candidates.map(function (c) { return "<span>" + esc(c.version) + "</span>"; }).join("") + "</div>" : "") + (r.snippet ? '<div class="snip">“' + esc(r.snippet) + '”</div>' : "") + '<div class="small muted" style="margin-top:6px">Checked ' + (r.cached ? "a moment ago" : "just now") + ' · <a href="#" data-url="' + esc(r.url) + '">official page</a></div></div>';
+    }).catch(function (e) { if (btn) btn.disabled = false; out.innerHTML = '<div class="check-result err">' + esc(e) + '</div>'; });
+  }
+
+  // ------------------------------------------------------------------ update flow (modal)
+  function bestDownloads(it) {
+    var os = osOf(), dls = fw(it).downloads || [];
+    var mine = dls.filter(function (d) { return d.os === os || d.os === "any"; });
+    return { installer: mine.filter(function (d) { return d.type === "installer"; })[0], card: dls.filter(function (d) { return d.type === "cardfile"; })[0], app: dls.filter(function (d) { return d.type === "app"; })[0], page: dls.filter(function (d) { return d.type === "page"; })[0], otherOs: dls.filter(function (d) { return d.type === "installer" && d.os !== os && d.os !== "any"; }) };
+  }
+  function modal(html) { $("#modal").innerHTML = html; $("#modal-wrap").classList.add("open"); $$(".close", $("#modal")).forEach(function (b) { b.onclick = closeModal; }); }
+  function closeModal() { $("#modal-wrap").classList.remove("open"); }
+  function mhead(title, sub) { return '<header><div><h3>' + title + '</h3>' + (sub ? '<div class="small muted">' + sub + '</div>' : "") + '</div><button class="icon-btn close">' + I.x + '</button></header>'; }
+  function opt(id, icon, title, sub, disabled, href) {
+    var inner = '<span class="ico">' + icon + '</span><div><b>' + title + '</b><span>' + sub + '</span></div><span class="arrow">›</span>';
+    if (STATIC && href) return '<a class="opt" href="' + esc(href) + '" target="_blank" rel="noopener" data-act="' + id + '">' + inner + '</a>';
+    return '<div class="opt ' + (disabled ? "disabled" : "") + '" data-act="' + id + '">' + inner + '</div>';
+  }
+
+  function openUpdate(it) {
+    var f = fw(it), b = bestDownloads(it), html = mhead(esc(it.brand + " " + it.model), (f.version ? "Firmware " + esc(f.version) : "Firmware") + (f.date ? " · " + esc(f.date) : "")) + '<div class="mbody">';
+    if (f.method === "none" && !f.version) {
+      html += '<div class="notice">No firmware has been released for this product. Nothing to install.</div>';
+    }
+    if (b.installer) html += opt("installer", I.installer, "Download " + (STATIC ? "the updater" : "&amp; run the updater"), esc(b.installer.filename || "installer") + " for " + osName(osOf()) + (b.installer.sizeMB ? " · " + b.installer.sizeMB + " MB" : "") + (STATIC ? ". Run it after the download finishes." : ". Opens automatically when the download finishes."), false, b.installer.url);
+    if (b.card) html += opt("card", I.card, "Download the firmware file" + (STATIC ? "" : " → copy to memory card"), esc(b.card.filename || "firmware") + (b.card.sizeMB ? " · " + b.card.sizeMB + " MB" : "") + (STATIC ? ". Copy it to the root of a memory card formatted in the camera, then run the update from the menu." : ". Then insert the card in the camera and run the update from the menu."), false, b.card.url);
+    if (f.method === "app" || b.app) html += opt("app", I.app, "Get " + esc(f.updateApp || "the companion app"), "This product updates through " + esc(f.updateApp || "its app") + ". Install it, connect the device, and let the app update it.", false, (b.app && b.app.url) || f.page);
+    if (b.otherOs.length) html += opt("otherOs", I.any, "Updater for " + b.otherOs.map(function (d) { return osName(d.os); }).join(" / "), "Download anyway (you're on " + osName(osOf()) + ").", false, b.otherOs[0].url);
+    html += opt("page", I.web, "Open the official download page", "Go to the maker's page" + (f.method === "page" || (!b.installer && !b.card) ? ". The download is behind a license-accept click or needs your exact model selected." : " to double-check or pick a different file."), false, (b.page && b.page.url) || f.page);
+    html += '<div class="notice" style="margin-top:12px">' + (steps(f.howTo).length ? "<b>Steps:</b> " + esc(steps(f.howTo).join("  ")) : "Charge the battery, format the card in-camera, and never power off during an update.") + '</div></div>';
+    modal(html);
+    $$(".opt", $("#modal")).forEach(function (o) {
+      if (o.tagName === "A") { o.onclick = function () { toast("Opening in a new tab…"); }; return; }
+      o.onclick = function () {
+        var a = o.dataset.act;
+        if (a === "installer") startDownload(it, b.installer, { autoOpen: true });
+        else if (a === "card") startDownload(it, b.card, { card: true });
+        else if (a === "app") { openExternal((b.app && b.app.url) || f.page); closeModal(); }
+        else if (a === "otherOs") startDownload(it, b.otherOs[0]);
+        else { openExternal((b.page && b.page.url) || f.page); closeModal(); }
+      };
+    });
+  }
+
+  function startDownload(it, dl, opts) {
+    opts = opts || {};
+    if (!dl || !dl.url || dl.type === "page") { openExternal((dl && dl.url) || fw(it).page); return; }
+    api.post("/api/download", { url: dl.url, filename: dl.filename, itemId: it.id, kind: dl.type }).then(function (r) {
+      if (!r.ok) { toast(r.error || "Download failed to start", "bad"); return; }
+      toast("Downloading " + (dl.filename || "file") + "…");
+      showProgress(it, r.job.id, Object.assign({ card: dl.type === "cardfile" }, opts));
+      startPolling(true);
+    });
+  }
+
+  function showProgress(it, jobId, opts) {
+    var openedOnce = false;
+    function render() {
+      var j = state.jobs.filter(function (x) { return x.id === jobId; })[0];
+      if (!j) return;
+      var pct = j.percent != null ? j.percent : null;
+      var html = mhead(esc(it.brand + " " + it.model), esc(j.filename || "")) + '<div class="mbody">' +
+        '<div class="job" style="margin:0"><div class="head"><b>' + esc(j.label || j.filename) + '</b><span class="state ' + j.state + '">' + j.state + '</span></div>' +
+        '<div class="bar"><i class="' + (pct == null && j.state === "running" ? "indeterminate" : "") + '" style="width:' + (pct == null ? 100 : pct) + '%"></i></div>' +
+        '<div class="sub">' + (j.state === "running" ? human(j.bytes) + (j.total ? " of " + human(j.total) : "") + (j.speed ? " · " + human(j.speed) + "/s" : "") : j.state === "done" ? "Saved to " + esc(j.path) : "") + '</div>' +
+        (j.error ? '<div class="err">' + esc(j.error) + '</div>' : "") + '</div>';
+      if (j.state === "done") {
+        html += '<div class="actions">';
+        if (opts.card) html += '<button class="btn primary" id="p-card">' + I.card + ' Copy to memory card</button>';
+        else html += '<button class="btn primary" id="p-open">' + I.installer + ' Open installer</button>';
+        html += '<button class="btn" id="p-reveal">' + I.folder + ' Show in folder</button><button class="btn ghost" id="p-page">' + I.web + ' Official page</button></div>';
+        if (opts.card) html += '<div class="notice" style="margin-top:12px">Insert the camera\'s memory card (formatted in the camera) into this computer, then copy. Afterwards: eject, insert in camera, Menu → Setup → Firmware / Version → Update.</div>';
+      } else if (j.state === "error") {
+        html += '<div class="actions"><button class="btn primary" id="p-page">' + I.web + ' Open official page instead</button></div>';
+      } else {
+        html += '<div class="actions"><button class="btn danger" id="p-cancel">Cancel</button></div>';
+      }
+      html += '</div>';
+      modal(html);
+      var b;
+      if ((b = $("#p-cancel"))) b.onclick = function () { api.post("/api/jobs/" + jobId + "/cancel"); };
+      if ((b = $("#p-open"))) b.onclick = function () { api.post("/api/open", { path: j.path }).then(function (r) { toast(r.ok ? "Launching installer" : r.error, r.ok ? "good" : "bad"); }); };
+      if ((b = $("#p-reveal"))) b.onclick = function () { api.post("/api/open", { path: j.path, reveal: true }); };
+      if ((b = $("#p-page"))) b.onclick = function () { openExternal(fw(it).page); };
+      if ((b = $("#p-card"))) b.onclick = function () { cardPicker(it, j.path); };
+      if (j.state === "done" && !openedOnce) {
+        openedOnce = true;
+        if (opts.autoOpen && state.settings.autoOpenInstallers !== false) api.post("/api/open", { path: j.path }).then(function () { toast("Installer opened", "good"); });
+        toast("Download finished", "good");
+      }
+      if (j.state === "queued" || j.state === "running") setTimeout(render, 500);
+    }
+    render();
+  }
+
+  function cardPicker(it, path, afterCopy) {
+    modal(mhead("Copy to memory card", esc(path.split(/[\\/]/).pop())) + '<div class="mbody"><div class="small muted" style="margin-bottom:10px">Pick the card. Zip files are unpacked and the firmware payload is placed in the card\'s root folder.</div><div class="vol-list" id="vols"><div class="muted small">Scanning…</div></div><div class="actions"><button class="btn" id="v-refresh">' + I.refresh + ' Rescan</button></div></div>');
+    function load() {
+      api.get("/api/volumes").then(function (r) {
+        var vols = r.volumes || [];
+        $("#vols").innerHTML = vols.length ? vols.map(function (v, i) {
+          return '<div class="vol" data-i="' + i + '"><span class="ico">' + I.card + '</span><div class="t"><b>' + esc(v.name) + '</b><span>' + esc(v.path) + ' · ' + esc(v.fs || "") + ' · ' + esc(v.sizeHuman) + ' (' + esc(v.freeHuman) + ' free)' + (v.mediaName ? ' · ' + esc(v.mediaName) : "") + '</span></div>' + (!v.writable ? '<span class="warn">read-only</span>' : (!v.isCard ? '<span class="warn">not a card?</span>' : "")) + '</div>';
+        }).join("") : '<div class="muted small">No memory card found. Insert the card (or a reader) and rescan.</div>';
+        $$(".vol", $("#vols")).forEach(function (el) {
+          el.onclick = function () {
+            var v = vols[+el.dataset.i];
+            if (!confirm("Copy the firmware to \"" + v.name + "\" (" + v.path + ")?")) return;
+            el.classList.add("sel");
+            api.post("/api/install-card", { path: path, volume: v.path, subdir: fw(it).cardSubdir || null }).then(function (r) {
+              if (!r.ok) { toast(r.error, "bad", 6000); return; }
+              modal(mhead("Firmware is on the card", esc(v.name)) + '<div class="mbody"><div class="notice">' + I.check + ' Copied: ' + r.result.copied.map(function (p) { return "<div class='mono small'>" + esc(p) + "</div>"; }).join("") + '</div>' +
+                '<ol class="howto" style="margin-top:12px">' + (steps(fw(it).howTo).length ? steps(fw(it).howTo).map(function (s) { return "<li>" + esc(s) + "</li>"; }).join("") : "<li>Eject the card.</li><li>Insert it into the camera with a full battery.</li><li>Menu → Setup → Firmware / Version → Update.</li><li>Do not turn the camera off until it finishes.</li>") + '</ol>' +
+                '<div class="actions"><button class="btn primary" id="v-eject">Eject card</button><button class="btn close">Done</button></div></div>');
+              $("#v-eject").onclick = function () { api.post("/api/eject", { path: v.path }).then(function (r) { toast(r.ok ? "Card ejected — safe to remove" : "Could not eject: " + (r.output || ""), r.ok ? "good" : "bad"); if (r.ok) closeModal(); }); };
+              $$(".close", $("#modal")).forEach(function (b) { b.onclick = closeModal; });
+            });
+          };
+        });
+      });
+    }
+    $("#v-refresh").onclick = load;
+    load();
+  }
+
+  // ------------------------------------------------------------------ jobs / downloads view
+  function startPolling(fast) {
+    clearTimeout(state.pollTimer);
+    refreshJobs().then(function () {
+      var active = state.jobs.some(function (j) { return j.state === "running" || j.state === "queued"; }) || state.usbJobs.some(function (j) { return j.state === "running" || j.state === "queued"; });
+      state.pollTimer = setTimeout(function () { startPolling(); }, active ? 700 : 4000);
+    });
+  }
+  function refreshJobs() {
+    return api.get("/api/jobs").then(function (r) {
+      state.jobs = r.downloads || []; state.usbJobs = r.usb || [];
+      var active = state.jobs.filter(function (j) { return j.state === "running" || j.state === "queued"; }).length;
+      $("#jobs-pill").textContent = active ? active : "";
+      if (state.view === "downloads") renderJobs();
+      if (state.view === "windows") renderUsbJobs();
+    }).catch(function () {});
+  }
+  function renderJobs() {
+    var el = $("#jobs"); if (!el) return;
+    if (!state.jobs.length) { el.innerHTML = '<div class="empty-state">' + I.download + '<div>No downloads yet. Pick a camera and hit <b>Update now</b>.</div></div>'; return; }
+    el.innerHTML = state.jobs.map(function (j) {
+      var pct = j.percent != null ? j.percent : (j.state === "done" ? 100 : null);
+      return '<div class="job"><div class="head"><b>' + esc(j.label || j.filename || j.url) + '</b><span class="state ' + j.state + '">' + j.state + '</span>' + (j.kind === "iso" ? '<span class="tag">ISO</span>' : "") + '</div>' +
+        '<div class="bar"><i class="' + (pct == null && j.state === "running" ? "indeterminate" : "") + '" style="width:' + (pct == null ? 100 : pct) + '%"></i></div>' +
+        '<div class="sub">' + (j.state === "running" ? human(j.bytes) + (j.total ? " of " + human(j.total) : "") + (j.speed ? " · " + human(j.speed) + "/s" : "") : esc(j.path || j.url)) + (j.sha256 && j.state === "done" ? '<br>SHA-256 <span class="mono">' + esc(j.sha256) + '</span>' + (j.expectedSha256 ? ' <span style="color:var(--good)">✓ matches Microsoft</span>' : "") : "") + '</div>' +
+        (j.error ? '<div class="err">' + esc(j.error) + '</div>' : "") +
+        '<div class="acts">' + (j.state === "done" ? '<button class="btn sm j-open" data-id="' + j.id + '">' + (j.kind === "iso" ? I.usb + " Use for USB" : I.installer + " Open") + '</button><button class="btn sm j-reveal" data-id="' + j.id + '">' + I.folder + ' Show</button>' + (j.kind !== "iso" ? '<button class="btn sm j-card" data-id="' + j.id + '">' + I.card + ' Copy to card</button>' : "") : "") + ((j.state === "running" || j.state === "queued") ? '<button class="btn sm danger j-cancel" data-id="' + j.id + '">Cancel</button>' : "") + (j.state === "error" ? '<button class="btn sm j-retry" data-id="' + j.id + '">' + I.refresh + ' Retry</button>' : "") + '</div></div>';
+    }).join("");
+    $$(".j-open", el).forEach(function (b) { b.onclick = function () { var j = jobById(b.dataset.id); if (j.kind === "iso") { setView("windows"); setTimeout(function () { $("#usb-iso-path").value = j.path; }, 300); } else api.post("/api/open", { path: j.path }).then(function (r) { toast(r.ok ? "Opened" : r.error, r.ok ? "good" : "bad"); }); }; });
+    $$(".j-reveal", el).forEach(function (b) { b.onclick = function () { api.post("/api/open", { path: jobById(b.dataset.id).path, reveal: true }); }; });
+    $$(".j-cancel", el).forEach(function (b) { b.onclick = function () { api.post("/api/jobs/" + b.dataset.id + "/cancel").then(function () { startPolling(true); }); }; });
+    $$(".j-card", el).forEach(function (b) { b.onclick = function () { var j = jobById(b.dataset.id); cardPicker(byId(j.itemId) || { firmware: {} }, j.path); }; });
+    $$(".j-retry", el).forEach(function (b) { b.onclick = function () { var j = jobById(b.dataset.id); api.post("/api/download", { url: j.url, filename: j.filename, itemId: j.itemId, kind: j.kind, label: j.label }).then(function () { startPolling(true); }); }; });
+  }
+  function jobById(id) { return state.jobs.filter(function (j) { return j.id === id; })[0] || {}; }
+  function refreshFiles() {
+    return api.get("/api/files").then(function (r) {
+      state.files = r.files || [];
+      var el = $("#files");
+      el.innerHTML = state.files.length ? state.files.map(function (f, i) {
+        return '<div class="file"><span class="muted">' + (f.isIso ? I.win : I.download) + '</span><div class="t"><b>' + esc(f.name) + '</b><span>' + esc(f.folder) + ' · ' + human(f.size) + '</span></div><button class="btn sm f-open" data-i="' + i + '">Open</button><button class="btn sm ghost f-show" data-i="' + i + '">Show</button></div>';
+      }).join("") : '<div class="muted small">Nothing downloaded yet.</div>';
+      $$(".f-open", el).forEach(function (b) { b.onclick = function () { api.post("/api/open", { path: state.files[+b.dataset.i].path }); }; });
+      $$(".f-show", el).forEach(function (b) { b.onclick = function () { api.post("/api/open", { path: state.files[+b.dataset.i].path, reveal: true }); }; });
+    });
+  }
+
+  // ------------------------------------------------------------------ windows tab
+  var winInit = false;
+  function initWindows() {
+    renderUsbJobs();
+    if (winInit) { if (!STATIC) { refreshIsoList(); refreshDisks(); } return; }
+    winInit = true;
+    $("#usb-os").textContent = "on " + osName(osOf());
+    api.get("/api/windows/versions").then(function (r) {
+      state.win = r;
+      $("#win-grid").innerHTML = r.versions.map(function (v, i) {
+        var c = v.name === "Windows 10" ? "#5ec8ff" : v.name === "Windows Server" ? "#9fe870" : v.tags.indexOf("insider") >= 0 ? "#ff9f1c" : "#4fc3f7";
+        return '<div class="win-card" data-id="' + esc(v.id) + '" style="--c:' + c + ';transition-delay:' + i * 60 + 'ms"><div class="head">' + Art.kinds.windows(c) + '<div><h3>' + esc(v.name) + ' <small>' + esc(v.release) + '</small></h3><div class="meta"><span>Build ' + esc(v.build) + '</span><span>' + esc(v.arch) + '</span><span>~' + esc(v.sizeGB) + ' GB</span></div></div></div>' +
+          '<p>' + esc(v.summary) + '</p><div class="meta">' + (v.released ? '<span>Released ' + esc(v.released) + '</span>' : "") + (v.supportEnd ? '<span>Support ends ' + esc(v.supportEnd) + '</span>' : "") + '</div>' +
+          '<div class="small muted">' + esc(v.notes) + '</div>' +
+          '<div class="row" style="display:flex;gap:6px;flex-wrap:wrap">' + v.tags.map(function (t) { return '<span class="tag">' + esc(t) + '</span>'; }).join("") + '</div>' +
+          '<div class="actions" style="margin-top:4px">' + (!STATIC && (v.editionId || v.directUrl) ? '<button class="btn primary sm w-get">' + I.download + ' Get ISO</button>' : "") + (STATIC && v.directUrl ? extBtn(v.directUrl, "primary sm", I.download + " Download ISO") : "") + extBtn(v.page, (STATIC && !v.directUrl ? "primary " : "") + "sm" + (STATIC && !v.directUrl ? "" : " ghost"), I.web + " Microsoft page", "") + '</div>' +
+          '<div class="resolve" id="res-' + esc(v.id) + '"></div></div>';
+      }).join("");
+      $$(".win-card").forEach(function (card, i) { setTimeout(function () { card.classList.add("in"); }, 40 + i * 60); var v = r.versions[i];
+        var g = $(".w-get", card); if (g) g.onclick = function () { resolveIso(v, card); };
+        var wp = $(".w-page", card); if (wp) wp.onclick = function () { openExternal(v.page); };
+      });
+      $("#win-tools").innerHTML = r.tools.map(function (t) {
+        var forMe = t.os === "any" || t.os === osOf();
+        var inner = (t.filename || t.github) && !STATIC ? I.download + " Get" : I.web + " Open";
+        return '<div class="tool"><span class="muted">' + (t.os === "mac" ? I.mac : t.os === "win" ? I.win : I.any) + '</span><div class="t"><b>' + esc(t.name) + '</b><span>' + esc(t.what) + '</span></div>' + (STATIC ? extBtn(t.url, "sm " + (forMe ? "" : "ghost"), inner) : '<button class="btn sm ' + (forMe ? "" : "ghost") + ' t-get" data-id="' + esc(t.id) + '">' + inner + '</button>') + '</div>';
+      }).join("");
+      $$(".t-get").forEach(function (b) { b.onclick = function () { getTool(b.dataset.id, b); }; });
+    });
+    if (!STATIC) { refreshIsoList(); refreshDisks(); }
+    $("#usb-iso-refresh").onclick = refreshIsoList; $("#usb-disk-refresh").onclick = refreshDisks;
+    $$("input[name=usb-mode]").forEach(function (r) { r.onchange = usbHint; }); usbHint();
+    $("#usb-go").onclick = usbWrite;
+  }
+  function getTool(id, btn) {
+    btn.disabled = true;
+    api.get("/api/windows/tool?id=" + encodeURIComponent(id)).then(function (r) {
+      btn.disabled = false;
+      if (!r.ok || r.page) { openExternal(r.url); return; }
+      api.post("/api/download", { url: r.url, filename: r.filename, subdir: "Tools", label: r.filename, kind: "tool" }).then(function (j) { toast("Downloading " + r.filename + (r.version ? " (" + r.version + ")" : "")); startPolling(true); });
+    });
+  }
+  function resolveIso(v, card) {
+    var box = $("#res-" + v.id);
+    box.classList.add("open");
+    box.innerHTML = '<div class="small"><span class="spin" style="display:inline-block;width:12px;height:12px;border:2px solid var(--accent);border-right-color:transparent;border-radius:50%;animation:rot .8s linear infinite;vertical-align:-2px;margin-right:8px"></span>Asking Microsoft for the current build and languages…</div>';
+    api.get("/api/windows/languages?version=" + encodeURIComponent(v.id)).then(function (r) {
+      if (!r.ok) { box.innerHTML = '<div class="notice bad">' + esc(r.error) + '</div><div class="actions"><button class="btn sm w-p">' + I.web + ' Open Microsoft\'s page</button></div>'; $(".w-p", box).onclick = function () { openExternal(r.page || v.page); }; return; }
+      box.innerHTML = (r.display ? '<div class="small"><b>' + esc(r.display) + '</b></div>' : "") + '<div class="field"><label>Language</label><select id="lang-' + esc(v.id) + '">' + r.languages.map(function (l) { return '<option value="' + esc(l.skuId) + '">' + esc(l.display || l.name) + '</option>'; }).join("") + '</select></div><div class="actions"><button class="btn primary sm w-res">' + I.link + ' Get download link</button></div><div id="links-' + esc(v.id) + '"></div>';
+      $(".w-res", box).onclick = function () {
+        var sel = $("#lang-" + v.id), btn = $(".w-res", box); btn.disabled = true; btn.innerHTML = '<span class="spin"></span> Resolving…';
+        api.post("/api/windows/resolve", { version: v.id, skuId: sel.value, language: sel.options[sel.selectedIndex].text }).then(function (x) {
+          btn.disabled = false; btn.innerHTML = I.link + " Get download link";
+          var out = $("#links-" + v.id);
+          if (!x.ok) { out.innerHTML = '<div class="notice bad">' + esc(x.error) + '</div>'; return; }
+          out.innerHTML = x.links.map(function (l, i) {
+            return '<div class="dl-row" style="margin-top:8px"><span class="os">' + I.win + '</span><div class="t"><b>' + esc(l.filename) + '</b><span>' + esc(l.arch) + (l.sha256 ? ' · SHA-256 verified on download' : ' · no published hash') + (x.expires ? ' · link valid until ' + esc(String(x.expires).replace("T", " ").slice(0, 16)) + ' UTC' : "") + '</span></div><button class="btn primary sm w-dl" data-i="' + i + '">' + I.download + ' Download</button><button class="btn sm ghost w-copy" data-i="' + i + '" title="Copy link">' + I.link + '</button></div>';
+          }).join("") + (x.links.some(function (l) { return l.sha256; }) ? '<div class="small muted" style="margin-top:6px">Hash from Microsoft: <span class="mono">' + esc(x.links[0].sha256 || "") + '</span></div>' : "");
+          $$(".w-dl", out).forEach(function (b) { b.onclick = function () { var l = x.links[+b.dataset.i]; api.post("/api/windows/download", { url: l.url, filename: l.filename, sha256: l.sha256, label: v.name + " " + v.release + " · " + (x.language || "") }).then(function (j) { if (j.ok) { toast("Downloading " + l.filename + " (~" + v.sizeGB + " GB)…", "good"); startPolling(true); setView("downloads"); } else toast(j.error, "bad"); }); }; });
+          $$(".w-copy", out).forEach(function (b) { b.onclick = function () { var l = x.links[+b.dataset.i]; navigator.clipboard.writeText(l.url).then(function () { toast("Link copied (valid ~24 h)"); }); }; });
+        });
+      };
+    });
+  }
+  function refreshIsoList() {
+    api.get("/api/files").then(function (r) {
+      var isos = (r.files || []).filter(function (f) { return f.isIso; });
+      var sel = $("#usb-iso");
+      sel.innerHTML = '<option value="">— choose a downloaded ISO —</option>' + isos.map(function (f) { return '<option value="' + esc(f.path) + '">' + esc(f.name) + ' (' + human(f.size) + ')</option>'; }).join("");
+    });
+  }
+  function refreshDisks() {
+    $("#usb-disks").innerHTML = '<div class="muted small">Scanning…</div>';
+    api.get("/api/disks").then(function (r) {
+      state.disks = r.disks || [];
+      $("#usb-disks").innerHTML = state.disks.length ? state.disks.map(function (d, i) {
+        return '<label class="vol"><input type="radio" name="usb-disk" value="' + esc(d.id) + '" style="accent-color:var(--accent)"><span class="ico">' + I.usb + '</span><div class="t"><b>' + esc(d.name) + '</b><span>' + esc(d.id) + ' · ' + esc(d.sizeHuman) + ' · ' + esc(d.bus || "") + (d.volumes && d.volumes.length ? ' · ' + esc(d.volumes.join(", ")) : "") + '</span></div>' + (d.size > 256 * 1024 * 1024 * 1024 ? '<span class="warn">large — is this a backup drive?</span>' : "") + '</label>';
+      }).join("") : '<div class="muted small">No external flash drive detected. Plug one in and rescan.</div>';
+    });
+  }
+  function usbHint() {
+    var m = ($("input[name=usb-mode]:checked") || {}).value;
+    var os = osOf();
+    $("#usb-hint").innerHTML = m === "windows" ? (os === "mac" ? "Formats the drive FAT32 (GPT), copies the installer, and splits install.wim with wimlib if it is over 4 GB. If wimlib is missing you'll get a one-line fix." : os === "win" ? "Runs an elevated PowerShell script: diskpart → FAT32 → copy → DISM split of install.wim if needed. Accept the UAC prompt." : "On Linux use Ventoy or WoeUSB; raw write is available for other ISOs.")
+      : m === "raw" ? "Byte-for-byte copy (dd). Correct for Linux, Ventoy and rescue images. <b>Windows ISOs written this way will not boot.</b>"
+      : "Hands the ISO to the system disc burner (hdiutil on macOS, Windows Disc Image Burner on Windows). Insert a blank DVD-DL for Windows 11.";
+  }
+  function usbWrite() {
+    var iso = $("#usb-iso-path").value.trim() || $("#usb-iso").value;
+    var mode = ($("input[name=usb-mode]:checked") || {}).value || "windows";
+    var disk = ($("input[name=usb-disk]:checked") || {}).value;
+    if (!iso) { toast("Choose an ISO first", "bad"); return; }
+    if (mode !== "dvd" && !disk) { toast("Pick a flash drive", "bad"); return; }
+    var d = state.disks.filter(function (x) { return x.id === disk; })[0];
+    if (mode !== "dvd") {
+      modal(mhead("Erase " + esc(d ? d.name : disk) + "?", esc(d ? d.sizeHuman + " · " + d.id : "")) + '<div class="mbody"><div class="notice bad">' + I.warn + ' Everything on this drive will be destroyed. Type <b>ERASE</b> to continue.</div><div class="field"><input type="text" id="erase-confirm" placeholder="ERASE" autocomplete="off"></div><div class="actions"><button class="btn danger" id="erase-go" disabled>Erase and write</button><button class="btn ghost close">Cancel</button></div></div>');
+      var inp = $("#erase-confirm"), go = $("#erase-go");
+      inp.focus(); inp.oninput = function () { go.disabled = inp.value.trim() !== "ERASE"; };
+      go.onclick = function () { closeModal(); submitUsb(iso, disk, mode); };
+    } else submitUsb(iso, null, mode);
+  }
+  function submitUsb(iso, disk, mode) {
+    api.post("/api/usb/write", { iso: iso, disk: disk, mode: mode, label: $("#usb-label").value }).then(function (r) {
+      if (!r.ok) { toast(r.error, "bad", 7000); return; }
+      toast(mode === "dvd" ? "Burner launched" : "Writing started", "good"); startPolling(true);
+    });
+  }
+  function renderUsbJobs() {
+    var el = $("#usb-jobs"); if (!el) return;
+    el.innerHTML = state.usbJobs.map(function (j) {
+      return '<div class="job" style="margin-top:12px"><div class="head"><b>' + esc(j.mode === "dvd" ? "Burn DVD" : j.mode === "raw" ? "Raw write" : "Windows USB") + ' → ' + esc(j.disk || "disc") + '</b><span class="state ' + j.state + '">' + j.state + '</span></div>' +
+        '<div class="bar"><i class="' + (j.progress == null && j.state === "running" ? "indeterminate" : "") + '" style="width:' + (j.progress == null ? 100 : j.progress) + '%"></i></div><div class="sub">' + esc(j.step || "") + '</div>' + (j.error ? '<div class="err">' + esc(j.error) + '</div>' : "") + '<div class="log">' + esc((j.log || []).join("\n")) + '</div></div>';
+    }).join("");
+    $$(".log", el).forEach(function (l) { l.scrollTop = l.scrollHeight; });
+  }
+
+  // ------------------------------------------------------------------ about / settings
+  function renderAbout() {
+    var s = (state.system && state.system.stats) || { byCategory: {} };
+    $("#about-stats").innerHTML = ["camera", "lens", "flash", "accessory"].map(function (c) { return '<div class="stat"><b>' + (s.byCategory[c] || 0) + '</b><span>' + esc(state.categories[c] || c) + '</span></div>'; }).join("") + '<div class="stat"><b>' + (s.brands || 0) + '</b><span>Brands</span></div>';
+  }
+  function openSettings() {
+    if (!state.system) { toast("Still loading… one second", ""); return; }
+    var s = state.settings;
+    modal(mhead("Settings") + '<div class="mbody">' + (STATIC ? '<div class="small muted" style="margin-bottom:8px">Web edition: downloads go to your browser\'s Downloads folder.</div>' : '<div class="field"><label>Download folder</label><input type="text" id="s-dir" value="' + esc(s.downloadDir || "") + '"></div>') +
+      '<div class="field"><label>Theme</label><div class="radio-row">' + ["espresso", "mocha", "walnut"].map(function (t) { return '<label><input type="radio" name="s-theme" value="' + t + '" ' + ((s.theme || "espresso") === t ? "checked" : "") + '> ' + t[0].toUpperCase() + t.slice(1) + '</label>'; }).join("") + '</div></div>' +
+      '<div class="field"><label class="toggle"><input type="checkbox" id="s-auto" ' + (s.autoOpenInstallers !== false ? "checked" : "") + '> Open installers automatically when a download finishes</label></div>' +
+      '<div class="small muted">System: ' + esc((state.system || {}).platform || "") + ' · Python ' + esc((state.system || {}).python || "") + ' · Downloads: ' + esc((state.system || {}).downloadDir || "") + '</div>' +
+      '<div class="actions"><button class="btn primary" id="s-save">Save</button><button class="btn ghost close">Cancel</button></div></div>');
+    $$("input[name=s-theme]").forEach(function (r) { r.onchange = function () { document.documentElement.dataset.accent = r.value; }; });
+    if (STATIC) { var ao = $("#s-auto"); if (ao) ao.closest(".field").style.display = "none"; }
+    $("#s-save").onclick = function () {
+      api.post("/api/settings", { downloadDir: $("#s-dir") ? $("#s-dir").value : undefined, theme: ($("input[name=s-theme]:checked") || {}).value, autoOpenInstallers: $("#s-auto").checked }).then(function (r) { state.settings = r; document.documentElement.dataset.accent = r.theme; if ($("#dl-dir")) $("#dl-dir").textContent = r.downloadDir || ""; toast("Saved", "good"); closeModal(); });
+    };
+  }
+
+  // ------------------------------------------------------------------ init
+  function showFatal(msg) {
+    var el = document.createElement("div");
+    el.className = "notice bad"; el.style.cssText = "max-width:720px;margin:30px auto;font-size:15px";
+    el.innerHTML = "<b>Can't reach the Camera Firmware Hub server.</b><br>" + esc(msg) + "<br><br>Start it with <span class='mono'>Start Camera Firmware Hub.command</span> (Mac) or <span class='mono'>Start Camera Firmware Hub.bat</span> (Windows), or run <span class='mono'>python3 app.py</span>, then open the address it prints (usually http://127.0.0.1:8765). Opening index.html directly from a folder does not work.";
+    $("#view-catalog").classList.add("active"); $("#grid").innerHTML = ""; $("#grid").appendChild(el);
+  }
+  function init() {
+    $("#view-catalog").classList.add("active");
+    $("#result-count").textContent = "Loading catalog…";
+    if (location.protocol === "file:") { showFatal("This page was opened as a file."); return; }
+    Promise.all([api.get("/api/system"), api.get("/api/catalog")]).then(function (res) {
+      state.system = res[0]; state.settings = res[0].settings || {};
+      document.documentElement.dataset.accent = state.settings.theme || "espresso";
+      if (STATIC) document.body.classList.add("static");
+      if (EMBED) document.body.classList.add("embed");
+      $("#dl-dir").textContent = res[0].downloadDir; $("#foot-version").textContent = "v" + res[0].version;
+      state.items = res[1].items; state.brands = res[1].brands; state.brandColors = res[1].brandColors; state.categories = res[1].categories;
+      state.items.forEach(index);
+      var counts = {}; state.items.forEach(function (i) { counts[i.category] = (counts[i.category] || 0) + 1; });
+      $$("[data-count]").forEach(function (p) { p.textContent = counts[p.dataset.count] || 0; });
+      route();
+      startPolling();
+    }).catch(function (e) { showFatal(String(e)); });
+    $$("#tabs button").forEach(function (b) { b.addEventListener("click", function () { closeDrawer(); setView(b.dataset.view); }); });
+    var q = $("#q");
+    function placeholder() { q.placeholder = window.innerWidth < 700 ? "Search cameras, lenses, flashes…" : "Search… a7 IV, R6 Mark II, Z8, X-T5, AD200 Pro, 24-70 GM"; }
+    placeholder(); window.addEventListener("resize", placeholder);
+    q.addEventListener("input", function () { state.q = q.value.trim(); $("#search").classList.toggle("has-text", !!state.q); state.sel = -1; renderSuggest(); renderGrid(); });
+    q.addEventListener("keydown", function (e) {
+      var rows = $$("#suggest .row");
+      if (e.key === "ArrowDown") { e.preventDefault(); state.sel = Math.min(rows.length - 1, state.sel + 1); renderSuggest(); }
+      else if (e.key === "ArrowUp") { e.preventDefault(); state.sel = Math.max(-1, state.sel - 1); renderSuggest(); }
+      else if (e.key === "Enter") { var r = rows[state.sel >= 0 ? state.sel : 0]; if (r) { var it = byId(r.dataset.id); closeSuggest(); if (it) { if (it.category !== state.category) setView(it.category); openItem(it); } } }
+      else if (e.key === "Escape") { if ($("#suggest").classList.contains("open")) closeSuggest(); else { q.value = ""; state.q = ""; renderGrid(); } }
+    });
+    q.addEventListener("blur", function () { setTimeout(closeSuggest, 120); });
+    q.addEventListener("focus", function () { if (state.q) renderSuggest(); });
+    $("#q-clear").onclick = function () { q.value = ""; state.q = ""; $("#search").classList.remove("has-text"); renderGrid(); q.focus(); };
+    $("#sort").onchange = function () { state.sort = $("#sort").value; renderGrid(); };
+    $("#scrim").onclick = closeDrawer;
+    $("#modal-wrap").addEventListener("click", function (e) { if (e.target === $("#modal-wrap")) closeModal(); });
+    $("#btn-settings").onclick = openSettings;
+    $("#btn-open-folder").onclick = function () { api.post("/api/open-folder"); };
+    $("#btn-clear-jobs").onclick = function () { api.post("/api/jobs/clear").then(function () { startPolling(true); }); };
+    document.addEventListener("click", function (e) { var a = e.target.closest("[data-url]"); if (a && !a.href) { e.preventDefault(); openExternal(a.dataset.url); } });
+    document.addEventListener("keydown", function (e) {
+      if (e.key === "/" && document.activeElement !== q && !e.target.matches("input,textarea,select")) { e.preventDefault(); if (!CAT_VIEWS[state.view]) setView("camera"); q.focus(); q.select(); }
+      if (e.key === "Escape") { if ($("#modal-wrap").classList.contains("open")) closeModal(); else if ($("#drawer").classList.contains("open")) closeDrawer(); }
+    });
+    window.addEventListener("hashchange", function () { if (location.hash.indexOf("#item/") !== 0) route(); });
+  }
+  document.addEventListener("DOMContentLoaded", init);
+})();
+
+</script>
+</body>
+</html>

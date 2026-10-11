@@ -1139,3 +1139,70 @@ img, svg { display: block; max-width: 100%; }
   .hchart-tip { min-width: 150px; }
   .footer-inner { padding-bottom: 96px; }
 }
+
+/* ─── 12. FIRMWARE ZONE (Camera Firmware Hub · espresso) ─────────────────────
+   While the Firmware tab is open the whole shell eases into the hub's
+   dark-brown palette. Applies in both light and dark themes on purpose: the
+   hub itself is a dark-brown product and the shell should feel like one piece. */
+[data-zone='firmware'] {
+  --bg-0: #120c09;
+  --bg-1: #1b130e;
+  --bg-2: #231913;
+  --bg-3: #2c2018;
+  --bg-4: #362a20;
+  --line: rgba(227, 168, 92, 0.12);
+  --line-2: rgba(227, 168, 92, 0.24);
+  --text: #f4eadc;
+  --text-2: #b99e86;
+  --text-3: #7f6753;
+  --accent: #e3a85c;
+  --accent-2: #f0c27f;
+  --accent-ink: #1a1008;
+  --accent-soft: rgba(227, 168, 92, 0.14);
+  --green: #7fd8a4;
+  --amber: #f2c66d;
+  --blue: #c9743c;
+  --violet: #d9a066;
+  --shadow: 0 18px 40px -18px rgba(0, 0, 0, 0.75), 0 2px 8px -2px rgba(0, 0, 0, 0.55);
+  --glow: 0 0 0 1px rgba(227, 168, 92, 0.35), 0 0 28px -8px rgba(227, 168, 92, 0.55);
+  --ring: 0 0 0 3px rgba(227, 168, 92, 0.28);
+  color-scheme: dark;
+}
+body, .rail, .rail::after, .rail-item, .rail-icon, .strip, .main, .panel, .mobilenav, .btn, .input-wrap, .badge, .railtech, .rail-mini, .footer, .app-main {
+  transition: background-color var(--med) var(--ease), color var(--med) var(--ease), border-color var(--med) var(--ease), box-shadow var(--med) var(--ease);
+}
+[data-zone='firmware'] .bg-glow { background: radial-gradient(900px 600px at 10% -10%, rgba(90, 52, 22, 0.55) 0%, transparent 60%), radial-gradient(800px 600px at 110% 10%, rgba(58, 36, 18, 0.6) 0%, transparent 55%); }
+[data-zone='firmware'] .rail::after { background: linear-gradient(180deg, transparent, rgba(227, 168, 92, 0.45), transparent); }
+[data-zone='firmware'] .rail-item.is-active { border-color: rgba(227, 168, 92, 0.3); }
+[data-zone='firmware'] .rail-item.is-active .rail-icon { border-color: rgba(227, 168, 92, 0.45); }
+[data-zone='firmware'] ::selection { background: rgba(227, 168, 92, 0.35); }
+[data-zone='firmware'] .eyebrow::before { color: var(--accent); }
+
+/* rail: Firmware dropdown */
+.rail-item.is-firmware { position: relative; }
+.rail-caret { display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 6px; color: var(--text-3); transition: transform var(--fast) var(--ease), background var(--fast), color var(--fast); }
+.rail-caret:hover { background: var(--bg-3); color: var(--text); }
+.rail-caret.is-open { transform: rotate(180deg); color: var(--accent); }
+.rail-sub { display: flex; flex-direction: column; gap: 2px; padding: 2px 0 8px 46px; animation: fadeUp var(--med) var(--ease); }
+.rail-subitem { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-radius: 8px; font-size: 12.5px; font-weight: 500; color: var(--text-2); text-align: left; white-space: nowrap; transition: background var(--fast), color var(--fast), transform var(--fast) var(--ease); }
+.rail-subitem:hover { background: var(--bg-2); color: var(--text); transform: translateX(2px); }
+.rail-subitem.is-active { color: var(--accent); background: var(--accent-soft); }
+.rail-subdot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; opacity: 0.55; flex: none; }
+.rail-subitem.is-active .rail-subdot { opacity: 1; box-shadow: 0 0 8px currentColor; }
+
+/* the embedded hub */
+.fw-page { display: flex; flex-direction: column; gap: 14px; }
+.fw-views { gap: 6px; }
+.fw-view { display: inline-flex; align-items: center; gap: 6px; padding: 7px 12px; border-radius: 999px; border: 1px solid var(--line); background: var(--bg-2); color: var(--text-2); font-size: 12.5px; font-weight: 600; transition: all var(--fast) var(--ease); text-decoration: none; }
+.fw-view:hover { color: var(--text); border-color: var(--line-2); transform: translateY(-1px); text-decoration: none; }
+.fw-view.is-active { background: var(--accent); color: var(--accent-ink); border-color: transparent; box-shadow: 0 6px 18px -6px var(--accent); }
+.fw-view-link { border-style: dashed; }
+.fw-frame-wrap { position: relative; border: 1px solid var(--line-2); border-radius: var(--radius); overflow: hidden; background: #120c09; box-shadow: var(--shadow); min-height: 640px; height: calc(100dvh - var(--topbar-h) - 150px); }
+.fw-frame { display: block; width: 100%; height: 100%; border: 0; background: #120c09; opacity: 0; transition: opacity var(--med) var(--ease); }
+.fw-frame-wrap.is-ready .fw-frame { opacity: 1; }
+.fw-loading { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; gap: 10px; color: #b99e86; font-size: 13px; }
+.fw-foot { font-size: 12px; max-width: 900px; }
+@media (max-width: 900px) {
+  .fw-frame-wrap { height: calc(100dvh - 200px); min-height: 520px; border-radius: var(--radius-sm); }
+  .fw-views { display: none; }
+}
