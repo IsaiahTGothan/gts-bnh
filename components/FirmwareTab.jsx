@@ -50,7 +50,12 @@ export default function FirmwareTab() {
       if (e.source !== frame.current?.contentWindow) return;
       const m = e.data || {};
       if (m.type === 'cfh:view' && m.view && m.view !== fwView && FIRMWARE_VIEWS.some((v) => v.id === m.view)) setFwView(m.view);
-      if (m.type === 'cfh:addgear') setAdding(m.item && m.item.id ? (gear.find((g) => g.id === m.item.id.replace(/^team-/, '')) || {}) : {});
+      if (m.type === 'cfh:addgear') {
+        const it = m.item;
+        if (!it) setAdding({});
+        else if (it.overrideOf) setAdding(gear.find((g) => g.overrideOf === it.overrideOf) || { ...it, id: undefined, _prefill: true });
+        else setAdding(gear.find((g) => g.id === String(it.id || '').replace(/^team-/, '')) || {});
+      }
     };
     window.addEventListener('message', onMessage);
     return () => window.removeEventListener('message', onMessage);
@@ -64,17 +69,22 @@ export default function FirmwareTab() {
   }, [send]);
 
   const saveGear = (data, existing) => {
-    if (existing?.id) { api.updateGear(existing.id, data); toast(`${data.brand} ${data.model} updated`, { tone: 'success' }); }
-    else { api.addGear(data); toast(`${data.brand} ${data.model} added — everyone sees it now`, { tone: 'success' }); }
+    const label = `${data.brand} ${data.model}`;
+    if (existing?.id) { api.updateGear(existing.id, data); toast(data.overrideOf ? `${label} fixed for everyone` : `${label} updated`, { tone: 'success' }); }
+    else { api.addGear(data); toast(data.overrideOf ? `${label} fixed for everyone — Reset brings back the original` : `${label} added — everyone sees it now`, { tone: 'success' }); }
     setAdding(null);
     send({ view: data.category, query: data.model });
     setFwView(data.category);
   };
 
-  const removeGear = (g) => confirm({
+  const removeGear = (g) => confirm(g.overrideOf ? {
+    title: `Reset ${g.brand} ${g.model} to the original?`, danger: true, confirmLabel: 'Reset',
+    message: 'Your team’s edits (links, version, steps) are dropped on every station and the researched entry comes back.',
+    onConfirm: () => { api.removeGear(g.id); setAdding(null); toast('Back to the original entry', { tone: 'warning' }); },
+  } : {
     title: `Remove ${g.brand} ${g.model}?`, danger: true, confirmLabel: 'Remove',
     message: 'It disappears from the firmware hub on every station. The uploaded file stays in storage until it is cleaned up.',
-    onConfirm: () => { api.removeGear(g.id); toast('Removed', { tone: 'warning' }); },
+    onConfirm: () => { api.removeGear(g.id); setAdding(null); toast('Removed', { tone: 'warning' }); },
   });
 
   return (
@@ -99,7 +109,7 @@ export default function FirmwareTab() {
         <div className="fw-gearlist">
           {gear.map((g) => (
             <div key={g.id} className="fw-gearrow">
-              <span className="fw-gearcat">{(CATEGORIES.find((c) => c[0] === g.category) || CATEGORIES[0])[1]}</span>
+              <span className="fw-gearcat">{g.overrideOf ? 'Edited' : (CATEGORIES.find((c) => c[0] === g.category) || CATEGORIES[0])[1]}</span>
               <div className="grow truncate"><b>{g.brand} {g.model}</b> <span className="muted">{g.version ? `· fw ${g.version}` : ''} · {g.addedBy || 'team'} · {relTime(g.updatedAt || g.createdAt)}</span></div>
               {g.files?.[0]?.url && <a className="btn btn-sm" href={g.files[0].url} target="_blank" rel="noopener"><Icon name="download" size={13} /> File</a>}
               {g.link && <a className="btn btn-sm" href={g.link} target="_blank" rel="noopener"><Icon name="external" size={13} /> Link</a>}
@@ -123,17 +133,25 @@ export default function FirmwareTab() {
       </div>
       <p className="fw-foot muted">Missing a model, or the maker just posted a newer version? <button className="linkish" onClick={() => setAdding({})}>Add gear</button> — name, version, link, drop the file — and it shows up for the whole team. Card-type firmware: copy the file to the root of a card formatted in the camera, then run the update from the camera menu.</p>
 
-      {adding && <GearModal initial={adding.id ? adding : null} passcode={state.settings.syncPasscode || ''} onSave={saveGear} onClose={() => setAdding(null)} />}
+      {adding && <GearModal initial={adding.id ? adding : null} prefill={adding._prefill ? adding : null} passcode={state.settings.syncPasscode || ''} onSave={saveGear} onRemove={removeGear} onClose={() => setAdding(null)} />}
     </div>
   );
 }
 
 // ─── Add / edit gear ─────────────────────────────────────────────────────────
-function GearModal({ initial, passcode, onSave, onClose }) {
-  const [d, setD] = useState(() => ({
-    category: 'camera', brand: 'Panasonic', model: '', version: '', date: '', page: '', link: '', aliases: '', howTo: '', notes: '', files: [],
-    ...(initial || {}),
-  }));
+const DL_TYPES = [['cardfile', 'Card file'], ['installer', 'Installer'], ['page', 'Web page'], ['app', 'App']];
+const DL_OS = [['any', 'Any OS'], ['win', 'Windows'], ['mac', 'macOS']];
+const isUrl = (u) => /^https?:\/\//.test(String(u || ''));
+
+function GearModal({ initial, prefill, passcode, onSave, onRemove, onClose }) {
+  const [d, setD] = useState(() => {
+    const base = { category: 'camera', brand: 'Panasonic', model: '', version: '', date: '', page: '', link: '', aliases: '', howTo: '', notes: '', files: [], ...(prefill || {}), ...(initial || {}) };
+    delete base._prefill;
+    if (Array.isArray(base.downloads)) base.downloads = base.downloads.map((x) => ({ url: x.url || '', filename: x.filename || '', type: x.type || 'page', os: x.os || 'any', sizeMB: x.sizeMB || null }));
+    return base;
+  });
+  const isOverride = !!d.overrideOf;
+  const setDl = (i, patch) => setD((x) => ({ ...x, downloads: x.downloads.map((r, j) => (j === i ? { ...r, ...patch } : r)) }));
   const set = (k, v) => setD((x) => ({ ...x, [k]: v }));
   const [uploads, setUploads] = useState(null);   // { enabled, maxMB } | null while probing
   const [busy, setBusy] = useState(false);
@@ -170,23 +188,27 @@ function GearModal({ initial, passcode, onSave, onClose }) {
     } finally { setBusy(false); }
   };
 
-  const valid = d.model.trim() && d.brand.trim() && (d.link.trim() || d.page.trim() || d.files.length);
+  const valid = d.model.trim() && d.brand.trim() && (d.link.trim() || d.page.trim() || d.files.length || (d.downloads || []).some((x) => x.url));
   const submit = (e) => {
     e?.preventDefault?.();
     if (!valid) { setErr('Model, brand, and at least a link or a file are needed.'); return; }
-    const clean = { ...d, model: d.model.trim(), brand: d.brand.trim(), version: d.version.trim(), page: d.page.trim(), link: d.link.trim(), aliases: d.aliases.trim(), howTo: d.howTo.trim(), notes: d.notes.trim() };
+    const bad = [d.page, d.link, ...(d.downloads || []).map((x) => x.url)].filter((u) => u && u.trim() && !isUrl(u.trim()));
+    if (bad.length) { setErr(`Links must start with http:// or https:// — check: ${bad[0]}`); return; }
+    const clean = { ...d, model: d.model.trim(), brand: d.brand.trim(), version: d.version.trim(), page: d.page.trim(), link: d.link.trim(), aliases: String(d.aliases || '').trim(), howTo: d.howTo.trim(), notes: d.notes.trim() };
+    if (Array.isArray(clean.downloads)) clean.downloads = clean.downloads.filter((x) => x.url && x.url.trim()).map((x) => ({ ...x, url: x.url.trim(), filename: x.filename || x.url.trim().split('?')[0].split('/').pop().slice(0, 80) }));
     delete clean.id; delete clean.createdAt; delete clean.updatedAt; delete clean.addedBy; delete clean.deletedAt;
     onSave(clean, initial);
   };
 
   return (
-    <Modal title={initial ? `Edit ${initial.brand} ${initial.model}` : 'Add gear to the firmware hub'} sub="Model + version + where the firmware is. Saves to the shared board, so every station sees it." icon="chip" size="lg"
+    <Modal title={initial || isOverride ? `Edit ${d.brand} ${d.model}` : 'Add gear to the firmware hub'}
+      sub={isOverride ? 'Fix a dead link, a newer version or the steps. Saves to the shared board so every station gets the fix; Reset brings back the researched entry.' : 'Model + version + where the firmware is. Saves to the shared board, so every station sees it.'} icon="chip" size="lg"
       onClose={onClose}
-      footer={<><Btn variant="ghost" onClick={onClose}>Cancel</Btn><Btn variant="primary" icon="check" onClick={submit} disabled={busy || !valid} loading={busy}>{initial ? 'Save changes' : 'Add to hub'}</Btn></>}>
+      footer={<>{initial?.id && onRemove && <Btn variant="danger" icon={isOverride ? 'undo' : 'trash'} onClick={() => onRemove(initial)} style={{ marginRight: 'auto' }}>{isOverride ? 'Reset to original' : 'Remove'}</Btn>}<Btn variant="ghost" onClick={onClose}>Cancel</Btn><Btn variant="primary" icon="check" onClick={submit} disabled={busy || !valid} loading={busy}>{initial || isOverride ? 'Save changes' : 'Add to hub'}</Btn></>}>
       <form className="stack" onSubmit={submit} style={{ gap: 14 }}>
         <div className="fw-formgrid">
           <Field label="Type" required>
-            <Select value={d.category} onChange={(e) => set('category', e.target.value)}>{CATEGORIES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</Select>
+            <ChoicePicker options={CATEGORIES} value={d.category} onChange={(v) => set('category', v)} />
           </Field>
           <Field label="Brand" required>
             <BrandPicker value={d.brand} onChange={(b) => set('brand', b)} />
@@ -201,11 +223,37 @@ function GearModal({ initial, passcode, onSave, onClose }) {
           <Field label="Also called" optional hint="Model codes / nicknames, comma separated"><Input value={d.aliases} onChange={(e) => set('aliases', e.target.value)} placeholder="DC-S1RM2, S1RII, S1R2" /></Field>
         </div>
         <Field label="Official firmware page" hint="The maker's page for this model — the safest link to hand a customer">
-          <Input value={d.page} onChange={(e) => set('page', e.target.value)} placeholder="https://av.jpn.support.panasonic.com/support/global/cs/dsc/download/s1rm2/" inputMode="url" />
+          <div className="fw-urlrow">
+            <Input value={d.page} onChange={(e) => set('page', e.target.value)} placeholder="https://av.jpn.support.panasonic.com/support/global/cs/dsc/download/s1rm2/" inputMode="url" />
+            <TestLink url={d.page} />
+          </div>
         </Field>
-        <Field label="Direct download link" optional hint="A link straight to the firmware file (zip / DAT / exe) if the maker has one">
-          <Input value={d.link} onChange={(e) => set('link', e.target.value)} placeholder="https://…/S1RM2_V15.zip" inputMode="url" />
-        </Field>
+        {Array.isArray(d.downloads) && (
+          <div className="field">
+            <span className="field-label">Download links <span className="opt">edit, test or remove — the first working one is what “Update now” uses</span></span>
+            <div className="fw-dls">
+              {d.downloads.length === 0 && <div className="muted" style={{ fontSize: 12.5 }}>No download links. Add one, or rely on the official page.</div>}
+              {d.downloads.map((x, i) => (
+                <div className="fw-dl" key={i}>
+                  <ChoicePicker options={DL_TYPES} value={x.type} onChange={(v) => setDl(i, { type: v })} compact />
+                  <ChoicePicker options={DL_OS} value={x.os} onChange={(v) => setDl(i, { os: v })} compact />
+                  <Input value={x.url} onChange={(e) => setDl(i, { url: e.target.value, filename: '' })} placeholder="https://…" inputMode="url" />
+                  <TestLink url={x.url} />
+                  <Btn size="sm" variant="ghost" icon="x" aria-label="Remove this link" onClick={() => setD((y) => ({ ...y, downloads: y.downloads.filter((_, j) => j !== i) }))} />
+                </div>
+              ))}
+            </div>
+            <div><Btn size="sm" variant="ghost" icon="plus" onClick={() => setD((y) => ({ ...y, downloads: [...y.downloads, { url: '', filename: '', type: 'cardfile', os: 'any' }] }))}>Add a link</Btn></div>
+          </div>
+        )}
+        {!Array.isArray(d.downloads) && (
+          <Field label="Direct download link" optional hint="A link straight to the firmware file (zip / DAT / exe) if the maker has one">
+            <div className="fw-urlrow">
+              <Input value={d.link} onChange={(e) => set('link', e.target.value)} placeholder="https://…/S1RM2_V15.zip" inputMode="url" />
+              <TestLink url={d.link} />
+            </div>
+          </Field>
+        )}
         <Field label="Firmware file" optional hint={uploads === null ? 'Checking storage…' : uploads.enabled ? `Drop the file here or click to choose · up to ${MAX_FILE_MB} MB · shared with the whole team` : 'File storage is not attached to this deployment yet — paste a link above.'}>
           <div className={`fw-drop ${drag ? 'is-drag' : ''} ${uploads?.enabled ? '' : 'is-off'}`}
             onClick={() => uploads?.enabled && fileRef.current?.click()}
@@ -281,4 +329,39 @@ export function BrandMark({ brand, size = 11 }) {
   const style = { background: m.bg, color: m.fg, fontFamily: m.font, fontWeight: m.w, letterSpacing: m.ls, fontSize: size, fontStyle: m.it ? 'italic' : 'normal' };
   if (m.round) { style.borderRadius = 999; style.paddingLeft = Math.round(size * 0.9); style.paddingRight = Math.round(size * 0.9); }
   return <span className="bm" style={style} title={brand}>{m.t}{m.bar && <span className="bm-bar">{m.bar.map((c) => <i key={c} style={{ background: c }} />)}</span>}</span>;
+}
+
+function TestLink({ url }) {
+  const ok = isUrl(url && url.trim());
+  return <a className={`btn btn-sm fw-test ${ok ? '' : 'is-off'}`} href={ok ? url.trim() : undefined} target="_blank" rel="noopener" title={ok ? 'Open this link in a new tab to check it' : 'Enter a full https:// link first'}><Icon name="external" size={13} /> Test</a>;
+}
+
+// Small custom dropdown (same look as the brand picker) for type / OS choices.
+function ChoicePicker({ options, value, onChange, compact }) {
+  const [open, setOpen] = useState(false);
+  const box = useRef(null);
+  useEffect(() => {
+    if (!open) return undefined;
+    const h = (e) => { if (box.current && !box.current.contains(e.target)) setOpen(false); };
+    document.addEventListener('mousedown', h);
+    return () => document.removeEventListener('mousedown', h);
+  }, [open]);
+  const cur = options.find((o) => o[0] === value) || options[0];
+  return (
+    <div className={`bp ${compact ? 'is-compact' : ''}`} ref={box}>
+      <button type="button" className={`bp-btn ${open ? 'is-open' : ''}`} onClick={() => setOpen((o) => !o)} aria-haspopup="listbox" aria-expanded={open}>
+        <span className="bp-label">{cur[1]}</span>
+        <Icon name="chevron-down" size={14} className="bp-caret" />
+      </button>
+      {open && (
+        <div className="bp-menu" role="listbox">
+          <div className="bp-list one">
+            {options.map(([v, l]) => (
+              <button type="button" key={v} role="option" aria-selected={v === value} className={`bp-item ${v === value ? 'is-sel' : ''}`} onClick={() => { onChange(v); setOpen(false); }}>{l}</button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }

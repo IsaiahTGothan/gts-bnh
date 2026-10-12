@@ -439,6 +439,21 @@ a.btn:hover, a.opt:hover { text-decoration: none; }
 @media (max-width: 520px) { .bp-list { grid-template-columns: 1fr; } }
 .card .art .tagline .bm { backdrop-filter: none; }
 
+/* edit links */
+.g-urlrow { display: flex; gap: 8px; align-items: center; }
+.g-urlrow input { flex: 1; min-width: 0; }
+.g-test.is-off { opacity: .4; pointer-events: none; }
+.g-dls { display: flex; flex-direction: column; gap: 8px; margin-bottom: 8px; }
+.g-dl { display: grid; grid-template-columns: 120px 110px minmax(0, 1fr) auto auto; gap: 8px; align-items: center; }
+.g-dl .dd { position: relative; }
+.g-dl .bp-btn { padding: 6px 8px; font-size: 12.5px; }
+.g-dl input { background: var(--panel); border: 1px solid var(--line-2); color: var(--text); border-radius: 10px; padding: 7px 10px; outline: 0; min-width: 0; font-size: 13px; }
+#g-catpick { position: relative; }
+.fixit { margin-top: 10px; font-size: 13px; color: var(--muted); }
+.linkish { background: none; border: 0; padding: 0; color: var(--accent); font: inherit; text-decoration: underline; cursor: pointer; }
+.tag.edited { color: #8fc7ff; border-color: rgba(143,199,255,.4); background: rgba(143,199,255,.08); }
+@media (max-width: 640px) { .g-dl { grid-template-columns: 1fr 1fr; } .g-dl input { grid-column: 1 / -1; } }
+
 </style>
 
 <div class="backdrop"><div class="blob b1"></div><div class="blob b2"></div><div class="blob b3"></div><div class="grain"></div></div>
@@ -1172,16 +1187,20 @@ a.btn:hover, a.opt:hover { text-decoration: none; }
   window.addEventListener("message", function (e) {
     var m = e.data || {};
     if (!m || m.type !== "cfh:custom" || !Array.isArray(m.items)) return;
-    state.items = state.items.filter(function (it) { return !it.custom; });
-    m.items.forEach(function (raw) {
-      var it = normalizeCustom(raw); if (!it) return;
-      index(it); state.items.push(it);
-    });
-    var counts = {}; state.items.forEach(function (i) { counts[i.category] = (counts[i.category] || 0) + 1; });
-    $$("[data-count]").forEach(function (p) { p.textContent = counts[p.dataset.count] || 0; });
+    state.teamGear = m.items;
+    rebuildItems();
     if (CAT_VIEWS[state.view]) { renderBrandChips(); renderGrid(); }
+    if (state.currentItem && $("#drawer").classList.contains("open")) { var cur = byId(state.currentItem.id); if (cur) openItem(cur); }
   });
+  function cloneDls(list) { return (list || []).filter(function (x) { return x && (x.url || x.path); }).map(function (x) { return { url: x.url || "", path: x.path || null, filename: x.filename || "", type: x.type || "page", os: x.os || "any", sizeMB: x.sizeMB || null }; }); }
+  // What the edit form starts from. Team-added gear keeps its own record; anything from the researched
+  // catalog becomes an override (same id) so the original can always be restored.
   function rawFromItem(it) {
+    if (it._override) return JSON.parse(JSON.stringify(it._override));
+    if (!it.custom) {
+      var f0 = it.firmware || {};
+      return { overrideOf: it.id, category: it.category, brand: it.brand, model: it.model, version: f0.version || "", date: f0.date || "", page: f0.page || "", link: "", aliases: (it.aliases || []).join(", "), howTo: f0.howTo || "", notes: f0.notes || "", downloads: cloneDls(f0.downloads), files: [] };
+    }
     var fw = it.firmware || {}, dl = fw.downloads || [];
     var file = dl.filter(function (x) { return x.path; })[0];
     var link = dl.filter(function (x) { return x.url && !x.path; })[0];
@@ -1287,7 +1306,7 @@ a.btn:hover, a.opt:hover { text-decoration: none; }
         '<div class="art">' + artFor(it) + '<div class="tagline">' + bmark(it.brand, 11) + '</div></div>' +
         '<div class="body"><h3>' + esc(it.model) + '</h3><div class="full">' + esc(it.fullName || "") + '</div>' +
         '<div class="row">' + versionBadge(it) + '<span class="method">' + m[1] + esc(f.updateApp ? m[0] + " · " + f.updateApp : m[0]) + '</span></div>' +
-        '<div class="row">' + (it.tags || []).slice(0, 4).map(function (t) { return '<span class="tag' + (t === "team-added" ? " team" : "") + '">' + esc(t) + '</span>'; }).join("") + '</div>' +
+        '<div class="row">' + (it.tags || []).slice(0, 4).map(function (t) { return '<span class="tag' + (t === "team-added" ? " team" : t === "edited" ? " edited" : "") + '">' + esc(t) + '</span>'; }).join("") + '</div>' +
         '<div class="foot"><button class="btn primary sm act-update">' + I.bolt + ' Update now</button><button class="btn sm ghost act-details">Details</button>' + (it.priceUSD ? '<span class="price">$' + it.priceUSD.toLocaleString() + '</span>' : "") + '</div></div>';
       el.addEventListener("click", function (e) { if (e.target.closest(".act-update")) { openUpdate(it); } else { openItem(it); } });
       frag.appendChild(el); io.observe(el);
@@ -1327,8 +1346,8 @@ a.btn:hover, a.opt:hover { text-decoration: none; }
       '<h2>' + esc(it.model) + '</h2><div class="fullname">' + esc(it.fullName || "") + (it.released ? ' · released ' + esc(it.released) : "") + (it.priceUSD ? ' · about $' + it.priceUSD.toLocaleString() : "") + '</div>' +
       '<div class="tags">' + (it.tags || []).map(function (t) { return '<span class="tag">' + esc(t) + '</span>'; }).join("") + (it.aliases || []).slice(0, 4).map(function (t) { return '<span class="tag" style="opacity:.7">' + esc(t) + '</span>'; }).join("") + '</div>' +
       (it.summary ? '<p class="summary">' + esc(it.summary) + '</p>' : "") +
-      '<div class="actions"><button class="btn primary" id="d-update">' + I.bolt + ' Update now</button>' + (it.custom ? '<button class="btn" id="d-edit">' + I.installer + ' Edit entry</button>' : '<button class="btn" id="d-check">' + I.refresh + ' Check for newer</button>') + extBtn(f.page, "ghost", I.web + " Official page", "d-page") + '</div>' +
-      '<div class="section"><h4>Latest firmware <span class="right">' + (f.verified ? "verified " + esc(f.verified) : esc(f.confidence || "unknown")) + ' <span class="conf ' + esc(f.confidence || "unknown") + '"></span></span></h4>' +
+      '<div class="actions"><button class="btn primary" id="d-update">' + I.bolt + ' Update now</button>' + '<button class="btn" id="d-edit">' + I.installer + ' Edit links &amp; info</button>' + (it.custom ? "" : '<button class="btn" id="d-check">' + I.refresh + ' Check for newer</button>') + extBtn(f.page, "ghost", I.web + " Official page", "d-page") + '</div>' +
+      '<div class="section"><h4>Latest firmware <span class="right">' + (it.edited ? "edited by " + esc(it.edited.by) + " · " + esc(it.edited.at) : f.verified ? "verified " + esc(f.verified) : esc(f.confidence || "unknown")) + ' <span class="conf ' + esc(f.confidence || "unknown") + '"></span></span></h4>' +
       '<div class="fw-head"><span class="big">' + (f.version ? esc(f.version) : (f.method === "none" ? "—" : "?")) + '</span><div class="meta">' + (f.date ? "Released " + esc(f.date) + "<br>" : "") + m[1] + " " + esc(m[0]) + (f.updateApp ? " · " + esc(f.updateApp) : "") + '</div></div>' +
       (f.notes ? '<p class="fw-notes">' + esc(f.notes) + '</p>' : "") +
       (f.method === "none" && !f.version ? '<div class="notice">The maker has not published a firmware update for this product yet. The official page is linked above in case that changes.</div>' : "") +
@@ -1344,7 +1363,7 @@ a.btn:hover, a.opt:hover { text-decoration: none; }
     $("#d-update").onclick = function () { openUpdate(it); };
     if (!STATIC && $("#d-page")) $("#d-page").onclick = function () { openExternal(f.page); };
     if ($("#d-check")) $("#d-check").onclick = function () { checkNewer(it, $("#check-out"), $("#d-check")); };
-    if ($("#d-edit")) $("#d-edit").onclick = function () { closeDrawer(); openAddGear(it._raw || rawFromItem(it)); };
+    if ($("#d-edit")) $("#d-edit").onclick = function () { openAddGear(it.custom ? (it._raw || rawFromItem(it)) : rawFromItem(it)); };
     $$(".dl-get", d).forEach(function (b) { b.onclick = function () { startDownload(it, dls[+b.dataset.i]); }; });
 
     d.classList.add("open"); $("#scrim").classList.add("open");
@@ -1394,8 +1413,10 @@ a.btn:hover, a.opt:hover { text-decoration: none; }
     if (f.method === "app" || b.app) html += opt("app", I.app, "Get " + esc(f.updateApp || "the companion app"), "This product updates through " + esc(f.updateApp || "its app") + ". Install it, connect the device, and let the app update it.", false, (b.app && b.app.url) || f.page);
     if (b.otherOs.length) html += opt("otherOs", I.any, "Updater for " + b.otherOs.map(function (d) { return osName(d.os); }).join(" / "), "Download anyway (you're on " + osName(osOf()) + ").", false, b.otherOs[0].url);
     html += opt("page", I.web, "Open the official download page", "Go to the maker's page" + (f.method === "page" || (!b.installer && !b.card) ? ". The download is behind a license-accept click or needs your exact model selected." : " to double-check or pick a different file."), false, (b.page && b.page.url) || f.page);
-    html += '<div class="notice" style="margin-top:12px">' + (steps(f.howTo).length ? "<b>Steps:</b> " + esc(steps(f.howTo).join("  ")) : "Charge the battery, format the card in-camera, and never power off during an update.") + '</div></div>';
+    html += '<div class="notice" style="margin-top:12px">' + (steps(f.howTo).length ? "<b>Steps:</b> " + esc(steps(f.howTo).join("  ")) : "Charge the battery, format the card in-camera, and never power off during an update.") + '</div>' +
+      '<div class="fixit">Link dead or wrong? <button type="button" class="linkish" id="u-fix">Fix it for everyone</button>' + (it.edited ? ' <span class="muted small">· edited by ' + esc(it.edited.by) + ' ' + esc(it.edited.at) + '</span>' : "") + '</div></div>';
     modal(html);
+    $("#u-fix").onclick = function () { openAddGear(it.custom ? (it._raw || rawFromItem(it)) : rawFromItem(it)); };
     $$(".opt", $("#modal")).forEach(function (o) {
       if (o.tagName === "A") { o.onclick = function () { toast("Opening in a new tab…"); }; return; }
       o.onclick = function () {
@@ -1659,9 +1680,54 @@ a.btn:hover, a.opt:hover { text-decoration: none; }
   var GEAR_KEY = "cfh-gear";
   function localGear() { try { return JSON.parse(localStorage.getItem(GEAR_KEY) || "[]") || []; } catch (e) { return []; } }
   function saveLocalGear(list) { try { localStorage.setItem(GEAR_KEY, JSON.stringify(list)); } catch (e) {} }
-  function applyLocalGear() {
-    state.items = state.items.filter(function (it) { return !it.custom || it._source !== "local"; });
-    localGear().forEach(function (raw) { var it = normalizeCustom(raw); if (it) { it._source = "local"; index(it); state.items.push(it); } });
+  function applyLocalGear() { rebuildItems(); }
+  function applyOverride(base, raw) {
+    var it = JSON.parse(JSON.stringify(base));
+    var f = it.firmware = it.firmware || {};
+    if (raw.version != null && raw.version !== "") f.version = raw.version;
+    if (raw.date) f.date = raw.date;
+    if (raw.page) { f.page = raw.page; f.checkUrl = raw.page; }
+    if (raw.notes != null) f.notes = raw.notes;
+    if (raw.howTo != null) f.howTo = raw.howTo;
+    if (raw.model) it.model = raw.model;
+    if (raw.category) it.category = raw.category;
+    if (raw.aliases != null) it.aliases = String(raw.aliases).split(/[,;]/).map(function (a) { return a.trim(); }).filter(Boolean);
+    var dls = Array.isArray(raw.downloads) ? cloneDls(raw.downloads) : (f.downloads || []);
+    (raw.files || []).forEach(function (x) { if (x && (x.url || x.path)) dls.unshift({ os: "any", type: x.type || guessType(x.name || x.url || x.path), url: x.url || null, path: x.path || null, filename: x.name || "", sizeMB: x.size ? Math.round(x.size / 104857.6) / 10 : null }); });
+    if (raw.link) dls.unshift({ os: "any", type: guessType(raw.link, true), url: raw.link, filename: raw.link.split("?")[0].split("/").pop().slice(0, 60) || raw.link });
+    f.downloads = dls;
+    if (dls.some(function (x) { return x.type === "cardfile"; }) && (f.method === "page" || f.method === "none")) f.method = "card";
+    if (dls.some(function (x) { return x.type === "installer"; }) && (f.method === "page" || f.method === "none")) f.method = "installer";
+    var when = (raw.updatedAt || raw.createdAt || new Date().toISOString()).slice(0, 10);
+    f.verified = when; f.confidence = "verified";
+    it.edited = { by: raw.addedBy || raw.editedBy || "team", at: when };
+    it.tags = ["edited"].concat((it.tags || []).filter(function (t) { return t !== "edited"; }));
+    it._override = raw;
+    return it;
+  }
+  // items = researched catalog + this browser's / the team's additions and edits.
+  function rebuildItems() {
+    var base = state.baseItems || [];
+    var ids = {}; base.forEach(function (it) { ids[it.id] = true; });
+    var overrides = {}, extra = [];
+    var sources = [];
+    localGear().forEach(function (r) { sources.push([r, "local"]); });
+    (state.teamGear || []).forEach(function (r) { sources.push([r, "team"]); });
+    sources.sort(function (a, b) { return String(a[0].updatedAt || a[0].createdAt || "").localeCompare(String(b[0].updatedAt || b[0].createdAt || "")); });
+    sources.forEach(function (pair) {
+      var raw = pair[0]; if (!raw || raw.deletedAt) return;
+      if (raw.overrideOf) { if (ids[raw.overrideOf]) overrides[raw.overrideOf] = raw; return; }
+      var it = normalizeCustom(raw); if (it) { it._source = pair[1]; it._raw = raw; extra.push(it); }
+    });
+    var out = base.map(function (it) {
+      if (overrides[it.id]) return applyOverride(it, overrides[it.id]);
+      if (it.custom && !it._raw) it._raw = rawFromItem(it);
+      if (it.overrideRaw && !it._override) { it._override = it.overrideRaw; }
+      return it;
+    }).concat(extra);
+    out.forEach(index);
+    state.items = out;
+    refreshCounts();
   }
   function refreshCounts() {
     var counts = {}; state.items.forEach(function (i) { counts[i.category] = (counts[i.category] || 0) + 1; });
@@ -1671,29 +1737,60 @@ a.btn:hover, a.opt:hover { text-decoration: none; }
   function openAddGear(existing) {
     if (EMBED && window.parent !== window) { try { window.parent.postMessage({ type: "cfh:addgear", item: existing || null }, "*"); } catch (e) {} return; }
     var d = Object.assign({ category: state.category && CAT_VIEWS[state.category] ? state.category : "camera", brand: "", model: "", version: "", date: "", page: "", link: "", aliases: "", howTo: "", notes: "", files: [] }, existing || {});
+    var isOverride = !!d.overrideOf;
+    var hasOverride = isOverride && !!(byId(d.overrideOf) || {})._override;
     var brands = Object.keys(state.brandColors).sort();
     var canUpload = !STATIC;
-    var mine = STATIC ? localGear() : state.items.filter(function (i) { return i.custom; }).map(function (i) { return i._raw || i; });
-    modal(mhead(existing ? "Edit " + esc(d.brand + " " + d.model) : "Add gear to the hub", STATIC ? "Saved in this browser. Paste the maker's link; files can't be stored on the hosted page." : "Saved to this computer's catalog (data/catalog.user.json). Drop the firmware file to keep it for card copies.") +
+    var mine = state.items.filter(function (i) { return i.custom || i._override; }).map(function (i) { return Object.assign({ _label: i._override ? "edited" : "added" }, i._override || i._raw || i); });
+    var dlRows = Array.isArray(d.downloads) ? cloneDls(d.downloads) : null;
+    modal(mhead(existing ? "Edit " + esc(d.brand + " " + d.model) : "Add gear to the hub",
+      isOverride ? "Fix a link, version or steps. " + (STATIC ? "Saved in this browser." : "Saved on this computer.") + " Reset to original brings back the researched entry."
+        : STATIC ? "Saved in this browser. Paste the maker's link; files can't be stored on the hosted page." : "Saved to this computer's catalog (data/catalog.user.json). Drop the firmware file to keep it for card copies.") +
       '<div class="mbody"><div class="g-grid">' +
-      '<label class="field"><span>Type</span><select id="g-cat">' + GEAR_CATS.map(function (c) { return '<option value="' + c[0] + '"' + (d.category === c[0] ? " selected" : "") + '>' + c[1] + '</option>'; }).join("") + '</select></label>' +
+      '<div class="field"><span>Type</span><div class="dd" id="g-catpick"></div><input type="hidden" id="g-cat" value="' + esc(d.category) + '"></div>' +
       '<div class="field"><span>Brand *</span><div id="g-brandpick"></div><input type="hidden" id="g-brand" value="' + esc(d.brand) + '"></div>' +
       '<label class="field"><span>Model *</span><input type="text" id="g-model" value="' + esc(d.model) + '" placeholder="Lumix S1R II"></label>' +
       '<label class="field"><span>Firmware version</span><input type="text" id="g-version" value="' + esc(d.version) + '" placeholder="Ver.1.5"></label>' +
       '<label class="field"><span>Released</span><input type="date" id="g-date" value="' + esc(d.date || "") + '"></label>' +
       '<label class="field"><span>Also called</span><input type="text" id="g-aliases" value="' + esc(d.aliases) + '" placeholder="DC-S1RM2, S1RII, S1R2"></label>' +
       '</div>' +
-      '<label class="field"><span>Official firmware page</span><input type="text" id="g-page" value="' + esc(d.page) + '" placeholder="https://av.jpn.support.panasonic.com/support/global/cs/dsc/download/s1rm2/"></label>' +
-      '<label class="field"><span>Direct download link</span><input type="text" id="g-link" value="' + esc(d.link) + '" placeholder="https://…/S1RM2_V15.zip"></label>' +
+      '<div class="field"><span>Official firmware page</span><div class="g-urlrow"><input type="text" id="g-page" value="' + esc(d.page) + '" placeholder="https://av.jpn.support.panasonic.com/support/global/cs/dsc/download/s1rm2/"><a class="btn sm ghost g-test" target="_blank" rel="noopener" data-for="g-page">Test</a></div></div>' +
+      (dlRows ? '<div class="field"><span>Download links</span><div id="g-dls" class="g-dls"></div><button type="button" class="btn sm ghost" id="g-dl-add">+ Add a link</button></div>' : "") +
+      '<div class="field"><span>' + (dlRows ? "New direct download link" : "Direct download link") + '</span><div class="g-urlrow"><input type="text" id="g-link" value="' + esc(d.link) + '" placeholder="https://…/S1RM2_V15.zip"><a class="btn sm ghost g-test" target="_blank" rel="noopener" data-for="g-link">Test</a></div></div>' +
       (canUpload ? '<div class="field"><span>Firmware file</span><div class="g-drop" id="g-drop">' + (d.files && d.files.length ? '<b>' + esc(d.files[0].name) + '</b> <span class="muted small">kept on this computer</span>' : I.download + ' Drop the firmware file here or click to choose') + '</div><input type="file" id="g-file" hidden></div>' : "") +
       '<div class="g-grid"><label class="field"><span>How to install</span><textarea id="g-howto" rows="3" placeholder="1) Charge battery. 2) Copy the file to the card root. 3) Setup → Firmware Version → Update.">' + esc(d.howTo) + '</textarea></label>' +
       '<label class="field"><span>Notes</span><textarea id="g-notes" rows="3" placeholder="What changed, gotchas, intermediate versions…">' + esc(d.notes) + '</textarea></label></div>' +
-      '<div class="actions"><button class="btn primary" id="g-save">' + I.check + ' ' + (existing ? "Save changes" : "Add to hub") + '</button>' + (existing ? '<button class="btn danger" id="g-remove">Remove</button>' : "") + '<button class="btn ghost close">Cancel</button></div>' +
+      '<div class="actions"><button class="btn primary" id="g-save">' + I.check + ' ' + (existing ? "Save changes" : "Add to hub") + '</button>' + (isOverride ? (hasOverride ? '<button class="btn danger" id="g-remove">Reset to original</button>' : "") : existing && d.id ? '<button class="btn danger" id="g-remove">Remove</button>' : "") + '<button class="btn ghost close">Cancel</button></div>' +
       '<div id="g-err" class="notice bad hidden"></div>' +
-      (mine.length ? '<div class="section" style="margin-top:14px"><h4>Added here (' + mine.length + ')</h4><div class="dl-list">' + mine.map(function (g) { return '<div class="dl-row"><span class="os">' + I.card + '</span><div class="t"><b>' + esc((g.brand || "") + " " + (g.model || "")) + '</b><span>' + esc(g.version ? "fw " + g.version : "") + '</span></div><button class="btn sm g-edit" data-id="' + esc(g.id || "") + '">Edit</button></div>'; }).join("") + '</div></div>' : "") +
+      (mine.length ? '<div class="section" style="margin-top:14px"><h4>Added or edited here (' + mine.length + ')</h4><div class="dl-list">' + mine.map(function (g) { return '<div class="dl-row"><span class="os">' + I.card + '</span><div class="t"><b>' + esc((g.brand || "") + " " + (g.model || "")) + '</b><span>' + esc(g._label + (g.version ? " · fw " + g.version : "")) + '</span></div><button class="btn sm g-edit" data-id="' + esc(g.overrideOf || g.id || "") + '">Edit</button></div>'; }).join("") + '</div></div>' : "") +
       '</div>');
     $$(".close", $("#modal")).forEach(function (b) { b.onclick = closeModal; });
     brandPicker($("#g-brandpick"), $("#g-brand"), brands);
+    dropdown($("#g-catpick"), { columns: 1, options: function () { return GEAR_CATS.map(function (c) { return { value: c[0], label: c[1] }; }); }, value: function () { return $("#g-cat").value; }, onChange: function (v) { $("#g-cat").value = v; } });
+    $$(".g-test", $("#modal")).forEach(function (a) {
+      function sync() { var v = ($("#" + a.dataset.for) || {}).value || ""; a.href = /^https?:\/\//.test(v) ? v : "#"; a.classList.toggle("is-off", !/^https?:\/\//.test(v)); }
+      sync(); var inp = $("#" + a.dataset.for); if (inp) inp.addEventListener("input", sync);
+    });
+    var DL_TYPES = [["cardfile", "Card file"], ["installer", "Installer"], ["page", "Web page"], ["app", "App"]], DL_OS = [["any", "Any OS"], ["win", "Windows"], ["mac", "macOS"]];
+    function renderDls() {
+      var host = $("#g-dls"); if (!host) return;
+      host.innerHTML = dlRows.length ? dlRows.map(function (x, i) {
+        return '<div class="g-dl" data-i="' + i + '"><div class="dd g-dl-type"></div><div class="dd g-dl-os"></div>' +
+          '<input type="text" class="g-dl-url" value="' + esc(x.url || "") + '" placeholder="https://…">' +
+          '<a class="btn sm ghost" target="_blank" rel="noopener" href="' + esc(/^https?:\/\//.test(x.url || "") ? x.url : "#") + '">Test</a>' +
+          '<button type="button" class="icon-btn g-dl-del" title="Remove this link">' + I.x + '</button></div>';
+      }).join("") : '<div class="muted small">No download links. Add one below or rely on the official page.</div>';
+      $$(".g-dl", host).forEach(function (row) {
+        var i = +row.dataset.i;
+        dropdown($(".g-dl-type", row), { columns: 1, options: function () { return DL_TYPES.map(function (t) { return { value: t[0], label: t[1] }; }); }, value: function () { return dlRows[i].type; }, onChange: function (v) { dlRows[i].type = v; } });
+        dropdown($(".g-dl-os", row), { columns: 1, options: function () { return DL_OS.map(function (t) { return { value: t[0], label: t[1] }; }); }, value: function () { return dlRows[i].os || "any"; }, onChange: function (v) { dlRows[i].os = v; } });
+        var u = $(".g-dl-url", row), t = $("a", row);
+        u.oninput = function () { dlRows[i].url = u.value.trim(); dlRows[i].filename = dlRows[i].url.split("?")[0].split("/").pop().slice(0, 80); t.href = /^https?:\/\//.test(u.value) ? u.value : "#"; };
+        $(".g-dl-del", row).onclick = function () { dlRows.splice(i, 1); renderDls(); };
+      });
+    }
+    renderDls();
+    var addDl = $("#g-dl-add"); if (addDl) addDl.onclick = function () { dlRows.push({ url: "", filename: "", type: "cardfile", os: "any" }); renderDls(); var last = $$("#g-dls .g-dl-url"); if (last.length) last[last.length - 1].focus(); };
     var files = (d.files || []).slice();
     var drop = $("#g-drop"), fileInput = $("#g-file");
     function err(msg) { var e = $("#g-err"); e.textContent = msg; e.classList.toggle("hidden", !msg); }
@@ -1712,26 +1809,32 @@ a.btn:hover, a.opt:hover { text-decoration: none; }
         .then(function (r) { if (!r.ok) throw new Error(r.error || "upload failed"); files = [{ name: r.name, path: r.path, size: r.size, type: guessType(r.name) }]; drop.innerHTML = "<b>" + esc(r.name) + "</b> <span class='muted small'>" + human(r.size) + " · kept on this computer</span>"; })
         .catch(function (e) { err("Could not save the file: " + e.message); drop.innerHTML = I.download + " Drop the firmware file here or click to choose"; });
     }
-    $$(".g-edit", $("#modal")).forEach(function (b) { b.onclick = function () { var g = mine.filter(function (x) { return x.id === b.dataset.id; })[0]; if (g) openAddGear(g); }; });
+    $$(".g-edit", $("#modal")).forEach(function (b) { b.onclick = function () { var it = byId(b.dataset.id) || byId("team-" + b.dataset.id); var g = it ? rawFromItem(it) : mine.filter(function (x) { return x.id === b.dataset.id; })[0]; if (g) openAddGear(g); }; });
     var rm = $("#g-remove");
-    if (rm) rm.onclick = function () { removeGear(d.id); };
+    if (rm) rm.onclick = function () {
+      if (isOverride) { removeOverride(d.overrideOf); return; }
+      removeGear(d.id);
+    };
     $("#g-save").onclick = function () {
-      var entry = { id: d.id || null, category: $("#g-cat").value, brand: $("#g-brand").value.trim(), model: $("#g-model").value.trim(), version: $("#g-version").value.trim(), date: $("#g-date").value, page: $("#g-page").value.trim(), link: $("#g-link").value.trim(), aliases: $("#g-aliases").value.trim(), howTo: $("#g-howto").value.trim(), notes: $("#g-notes").value.trim(), files: files };
+      var entry = { id: d.id || null, overrideOf: d.overrideOf || null, downloads: dlRows ? dlRows.filter(function (x) { return x.url; }) : undefined, category: $("#g-cat").value, brand: $("#g-brand").value.trim(), model: $("#g-model").value.trim(), version: $("#g-version").value.trim(), date: $("#g-date").value, page: $("#g-page").value.trim(), link: $("#g-link").value.trim(), aliases: $("#g-aliases").value.trim(), howTo: $("#g-howto").value.trim(), notes: $("#g-notes").value.trim(), files: files };
       if (!entry.brand || !entry.model) { err("Brand and model are required."); return; }
-      if (!entry.page && !entry.link && !files.length) { err("Add at least the official page, a download link, or a file."); return; }
+      if (!entry.page && !entry.link && !files.length && !(entry.downloads && entry.downloads.length)) { err("Add at least the official page, a download link, or a file."); return; }
+      var bad = [entry.page, entry.link].concat((entry.downloads || []).map(function (x) { return x.url; })).filter(function (u) { return u && !/^https?:\/\//.test(u); });
+      if (bad.length) { err("Links must start with http:// or https:// — check: " + bad[0]); return; }
       if (STATIC) {
-        var list = localGear().filter(function (g) { return g.id !== (d.id || "~"); });
-        entry.id = d.id || ("team-" + compact(entry.brand + " " + entry.model)); entry.createdAt = d.createdAt || new Date().toISOString(); entry.addedBy = "this browser";
+        var list = localGear().filter(function (g) { return g.id !== (d.id || "~") && !(entry.overrideOf && g.overrideOf === entry.overrideOf); });
+        entry.id = d.id || (entry.overrideOf ? "edit-" + entry.overrideOf : "team-" + compact(entry.brand + " " + entry.model)); entry.createdAt = d.createdAt || new Date().toISOString(); entry.updatedAt = new Date().toISOString(); entry.addedBy = "this browser";
         list.push(entry); saveLocalGear(list); applyLocalGear(); afterSave(entry);
       } else {
         api.post("/api/gear", { entry: entry }).then(function (r) {
           if (!r.ok) { err(r.error || "Could not save"); return; }
-          api.get("/api/catalog").then(function (c) { state.items = c.items; state.items.forEach(index); state.items.forEach(function (it) { if (it.custom) it._raw = rawFromItem(it); }); applyLocalGear(); afterSave(r.entry); });
+          api.get("/api/catalog").then(function (c) { state.baseItems = c.items; rebuildItems(); afterSave(r.entry); });
         });
       }
     };
     function afterSave(entry) {
-      refreshCounts(); closeModal(); toast(esc(entry.brand + " " + entry.model) + " added to the hub", "good");
+      refreshCounts(); closeModal(); toast((entry.brand + " " + entry.model) + (isOverride ? " updated — the original is kept, Reset brings it back" : " added to the hub"), "good");
+      if (isOverride) { renderGrid(); var it2 = byId(d.overrideOf || entry.overrideOf || entry.id); if (it2) openItem(it2); return; }
       if (CAT_VIEWS[state.view] !== undefined || true) { setView(entry.category); $("#q").value = entry.model; state.q = entry.model; $("#search").classList.add("has-text"); renderGrid(); }
     }
   }
@@ -1761,8 +1864,14 @@ a.btn:hover, a.opt:hover { text-decoration: none; }
   }
   function removeGear(id) {
     if (!id) return;
-    if (STATIC) { saveLocalGear(localGear().filter(function (g) { return g.id !== id; })); applyLocalGear(); refreshCounts(); closeModal(); renderGrid(); toast("Removed"); return; }
-    api.post("/api/gear/remove", { id: id }).then(function () { return api.get("/api/catalog"); }).then(function (c) { state.items = c.items; state.items.forEach(index); applyLocalGear(); refreshCounts(); closeModal(); renderGrid(); toast("Removed"); });
+    if (STATIC) { saveLocalGear(localGear().filter(function (g) { return g.id !== id; })); rebuildItems(); closeModal(); renderGrid(); toast("Removed"); return; }
+    api.post("/api/gear/remove", { id: id }).then(function () { return api.get("/api/catalog"); }).then(function (c) { state.baseItems = c.items; rebuildItems(); closeModal(); renderGrid(); toast("Removed"); });
+  }
+  function removeOverride(itemId) {
+    var done = function () { closeModal(); renderGrid(); var it = byId(itemId); if (it) openItem(it); toast("Back to the original entry"); };
+    if (localGear().some(function (g) { return g.overrideOf === itemId; })) { saveLocalGear(localGear().filter(function (g) { return g.overrideOf !== itemId; })); rebuildItems(); done(); return; }
+    if (STATIC) { done(); return; }
+    api.post("/api/gear/remove", { id: itemId }).then(function () { return api.get("/api/catalog"); }).then(function (c) { state.baseItems = c.items; rebuildItems(); done(); });
   }
 
   // ------------------------------------------------------------------ about / settings
@@ -1802,11 +1911,8 @@ a.btn:hover, a.opt:hover { text-decoration: none; }
       if (STATIC) document.body.classList.add("static");
       if (EMBED) document.body.classList.add("embed");
       $("#dl-dir").textContent = res[0].downloadDir; $("#foot-version").textContent = "v" + res[0].version;
-      state.items = res[1].items; state.brands = res[1].brands; state.brandColors = res[1].brandColors; state.categories = res[1].categories;
-      state.items.forEach(index);
-      state.items.forEach(function (it) { if (it.custom) it._raw = rawFromItem(it); });
-      applyLocalGear();
-      refreshCounts();
+      state.baseItems = res[1].items; state.brands = res[1].brands; state.brandColors = res[1].brandColors; state.categories = res[1].categories;
+      rebuildItems();
       route();
       startPolling();
     }).catch(function (e) { showFatal(String(e)); });

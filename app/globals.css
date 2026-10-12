@@ -1243,3 +1243,13 @@ body, .rail, .rail::after, .rail-item, .rail-icon, .strip, .main, .panel, .mobil
 .bp-item .bm { flex: 1; justify-content: flex-start; }
 .bp-list { grid-template-columns: 1fr 1fr 1fr; }
 @media (max-width: 700px) { .bp-list { grid-template-columns: 1fr 1fr; } }
+
+/* Firmware → edit links */
+.fw-urlrow { display: flex; gap: 8px; align-items: center; }
+.fw-urlrow > .input, .fw-urlrow > input { flex: 1; min-width: 0; }
+.fw-test.is-off { opacity: .4; pointer-events: none; }
+.fw-dls { display: flex; flex-direction: column; gap: 8px; margin: 2px 0 6px; }
+.fw-dl { display: grid; grid-template-columns: 118px 104px minmax(0, 1fr) auto auto; gap: 8px; align-items: center; }
+.bp.is-compact .bp-btn { padding: 7px 9px; font-size: 12.5px; }
+.bp-list.one { grid-template-columns: 1fr; }
+@media (max-width: 700px) { .fw-dl { grid-template-columns: 1fr 1fr; } .fw-dl > .input, .fw-dl > input { grid-column: 1 / -1; } }
