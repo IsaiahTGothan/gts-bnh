@@ -5,6 +5,7 @@
 //  badges · small SVG charts. No external UI libraries.
 // ═══════════════════════════════════════════════════════════════════════════
 import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { ASG_STATUS_BY_ID, PRIORITY_BY_ID, SERVICE_TYPES, TECH_BY_ID, TICKET_STATUSES } from '../lib/constants';
 import { ageLevel, cx, fmtElapsedLong } from '../lib/utils';
 import { ZAYS_PATH, ZAYS_VIEWBOX } from '../lib/zays-logo';
@@ -420,10 +421,20 @@ function useLockScroll() {
   }, []);
 }
 
+/**
+ * Overlays render straight into <body>. Tabs animate in with a transform, and a
+ * transformed ancestor turns position: fixed into "fixed to that ancestor" — the
+ * modal would land at the top of the page, off-centre, with its footer cut off.
+ */
+function Portal({ children }) {
+  if (typeof document === 'undefined') return null;
+  return createPortal(children, document.body);
+}
+
 export function Modal({ title, sub, onClose, children, footer, size, icon }) {
   useEscape(onClose); useLockScroll();
   return (
-    <>
+    <Portal>
       <div className="backdrop" onClick={onClose} />
       <div className="modal-wrap" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose?.(); }}>
         <div className={cx('modal', size && `is-${size}`)} role="dialog" aria-modal="true" aria-label={title}>
@@ -441,21 +452,21 @@ export function Modal({ title, sub, onClose, children, footer, size, icon }) {
           {footer && <footer className="modal-foot">{footer}</footer>}
         </div>
       </div>
-    </>
+    </Portal>
   );
 }
 
 export function Drawer({ onClose, header, children, footer, width }) {
   useEscape(onClose); useLockScroll();
   return (
-    <>
+    <Portal>
       <div className="backdrop" onClick={onClose} />
       <aside className="drawer" style={width ? { width } : undefined} role="dialog" aria-modal="true">
         <div className="drawer-head">{header}</div>
         <div className="drawer-body">{children}</div>
         {footer && <div className="drawer-foot">{footer}</div>}
       </aside>
-    </>
+    </Portal>
   );
 }
 
