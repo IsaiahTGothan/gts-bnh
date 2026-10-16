@@ -1,4 +1,4 @@
-# GTS Hub V3 — Guest Technical Services
+# GTS Hub V4 — Guest Technical Services
 
 The B&H GTS counter, on one live board. **Log a customer once, push it everywhere**: Salesforce, UNIX, the overnight board — with every number the directors could ask for on one Stats page.
 
@@ -6,11 +6,30 @@ The B&H GTS counter, on one live board. **Log a customer once, push it everywher
 |---|---|
 | ![Home](docs/screenshots/home.png) | ![Stats](docs/screenshots/stats.png) |
 
-| Quick Log | Management |
+| Quick Log (3D stage) | Management → System |
 |---|---|
-| ![Quick Log](docs/screenshots/quicklog.png) | ![Management](docs/screenshots/management.png) |
+| ![Quick Log](docs/screenshots/quicklog.png) | ![System](docs/screenshots/system.png) |
+
+| Warranty helper | Matrix theme + RGB mode |
+|---|---|
+| ![Warranty](docs/screenshots/warranty.png) | ![Matrix + RGB](docs/screenshots/matrix-rgb.png) |
 
 Built with Next.js (App Router) + React, a hand-rolled design system (no UI libraries), Supabase for the live team board, and an optional Salesforce Connected App. Deploys to Vercel as-is. Live at **https://gts-hub.vercel.app**.
+
+---
+
+## What’s new in V4
+
+* **Quick Log stage (three.js)** — the Quick Log card now sits on a live 3D stage the customer can watch. A light-beam connects whichever field you are typing in to a glowing core; every keystroke streams particles down it, the 10-segment ring lights up digit by digit as the order number goes in, the colour follows the service type (or the warranty brand), and saving fires a shockwave. The right side is a customer-facing HUD: the order number assembling in big digit slots, a decoding status line (“Order number recognised”), the service, the brand and the customer’s name masked as “Devon C.”. **Customer display** (⤢) puts the whole stage full screen for a second monitor. three.js is lazy-loaded (only on Quick Log), pauses when hidden, respects reduced motion, and falls back to a 2D glow when WebGL is missing.
+* **Service clock — how long a ticket takes.** Every ticket gets a clock from the first keystroke (or a manual Start) to **Done**, with **Pause / Resume**, and Resume after Done for customers who come back. **Now serving** shows every running clock big, turning amber past the target and red past 2×. Full control: edit start, finish, paused minutes and the created-at time on any ticket (Management can lock that). Stats shows average, median, 90th percentile, % within target, a duration histogram, average by service type against its target, and average + total service time per tech. Forgotten clocks raise an alert.
+* **Customers per hour** — a live *this hour · per hour today · in service* pill in the top strip, today’s hour-by-hour chart, a “typical day” chart, customers per **open** hour (using real store hours), the record hour, plus a printable **end-of-day report**.
+* **Multi-select + bulk actions** — tick the box on any card (or click rows in the new **table layout**, 400 rows), shift-click for a range, ⌘/Ctrl + A for the whole view, Esc to clear. The bar at the bottom moves the selection between **Open → Pushed**, **Needs UNIX → In UNIX** (and back), stops running clocks, **Archives** (new *Archived* view; archived tickets still count in Stats), reassigns the tech, changes the type, exports CSV or deletes — with Undo.
+* **Warranty helper** — new *Warranty* tab (`9`) and a **Warranty** service type. Pick a brand (56 built in: Apple, Samsung, Sony, Canon, Nikon, Dell, HP, DJI, Bose…) and get the official US warranty-check page, the repair page, the support phone, what the customer needs ready, and a **QR code** they scan to start the claim on their own phone. Warranty tickets keep the brand and serial. Managers can correct or add links (Management → System → Warranty directory) and **Check all links** from the server.
+* **Walk-in queue** — add people as they arrive (`W`), see live wait times (amber at 15 min, red at 30), tap **Serve** and the Quick Log fills itself in; their wait and their service time are both measured. Walk-outs are tracked.
+* **Management → System** — everything the software department asked for: store code + per-weekday store hours, service-clock default + targets (global and per type), ticket rules (required fields, order-number pattern with warn/block, duplicate window, description templates), feature switches, **security** (auto-lock after idle, per-permission tech controls), **privacy** (name masking on the customer display, anonymise after N days), **integrations** (HTTPS webhooks to Teams / Slack / Power Automate, `/api/health` for uptime monitoring), **diagnostics** you can paste into an IT ticket, **config export / import** between stores, an **audit log** CSV and a generated **technical handoff**. See [`docs/SOFTWARE_HANDOFF.md`](docs/SOFTWARE_HANDOFF.md).
+* **Matrix theme + RGB mode** — a third theme (green phosphor, digital rain, scanlines, mono headings) and digital rain on the stage in every theme. **RGB mode** (`R`, or the RGB pill in the strip) runs one rainbow wave across the hero buttons, the metric tiles and the stage, and cycles the 3D core through the spectrum; it switches itself on for a few seconds when the daily goal is hit (with confetti).
+* **Smoother everywhere** — Enter jumps to the next field, ⌘/Ctrl + Enter saves, Esc clears; order-number check mark + digit count; one-tap description templates; duplicate-order warning; touch devices don’t pop the keyboard on open; page titles decode in; columns and charts animate in; the T modal has the same fields as the stage.
+* Keyboard: `1–9` tabs · `T` quick log · `W` walk-in · `N` check-in · `R` RGB · `/` search · `⌘K` palette · `[` rail · `?` all shortcuts.
 
 ---
 
@@ -79,8 +98,11 @@ Inventory (serialized assets, counted pools, consumables with low-stock alerts; 
 ### Firmware (Update / Install Firmware)
 The **Camera Firmware Hub** (made for B&H by ZAYS.us) embedded as its own page: search 439 cameras, lenses, flashes and accessories by name or model code, see the latest firmware with install steps, download the file or jump to the official page, plus the Windows ISO guide. Sections (Cameras · Lenses · Flashes & Lighting · Accessories · Windows ISO · About) are a dropdown under *Firmware* in the rail and chips above the page; `8` opens it. The shell eases into the hub's espresso palette while it is open. The hub itself lives in `public/firmware/` and is built from the Camera Firmware Hub project (`python3 tools/build_web.py --gts <this repo>`).
 
+### Warranty
+Brand directory (`lib/warranty-data.js` + team overrides in the management document): official warranty and repair pages, phone, prerequisites and a QR per brand. One click logs a warranty ticket.
+
 ### Management
-Team · Alerts · Daily goal · Manager PIN · Connections · Exports. Managers see it in the rail; once a PIN is set, techs get a lock screen. The PIN unlock is remembered per device (lock it again from the tab).
+**Overview:** Team · Alerts · Daily goal · Manager PIN · Connections · Exports. **System:** Store & hours · Service clock · Ticket rules · Features · Security · Privacy · Warranty directory · Integrations · Diagnostics · Configuration. Managers see it in the rail; once a PIN is set, techs get a lock screen (auto-locks again after the idle time set in System). The PIN unlock is remembered per device.
 
 ---
 
@@ -127,6 +149,12 @@ Next steps that need IT: whitelist `gts-hub.vercel.app` on the counter PCs so th
 
 ---
 
+### Webhooks & monitoring (V4)
+
+* **Management → System → Integrations → Webhook URL** (HTTPS). Events: *ticket logged*, *service finished* (with minutes), *device checked in*. The browser posts to `/api/webhook`, which relays server-side (private / local addresses refused, 6 s timeout). Slack, Teams and Power Automate URLs get a `text` summary on top of the JSON. *Send test event* checks the endpoint.
+* **`GET /api/health`** — `{ ok, version, time, region, commit, integrations }`, no auth, no data. Point B&H uptime monitoring at it.
+* **`POST /api/linkcheck`** — checks the warranty directory links from the server (Management → System → Warranty directory → Check all links).
+
 ## Data & storage
 
 * Everything is cached **in the browser** (`localStorage`) on each device and, with team sync on, mirrored in the shared Supabase document. Export a backup from Settings once in a while.
@@ -144,7 +172,10 @@ Next steps that need IT: whitelist `gts-hub.vercel.app` on the counter PCs so th
 | Service types, statuses, wait reasons, accessories, storage spots, note templates | `lib/constants.js` |
 | Overdue threshold default, station/store labels | `lib/constants.js` → `DEFAULT_SETTINGS` (or Settings in the app) |
 | Criticality rules / alerts | `lib/utils.js` → `computePriority`, `buildAlerts` |
-| Stats definitions | `lib/stats.js` |
+| Stats definitions | `lib/stats.js` (service time + per-hour maths in `lib/service.js`) |
+| Store hours, targets, rules, permissions, privacy, webhooks | **Management → System** in the app (defaults in `lib/constants.js` → `DEFAULT_MANAGEMENT`) |
+| Warranty brands & links | **Management → System → Warranty directory**, built-ins in `lib/warranty-data.js` |
+| 3D stage | `components/QuickLogScene.jsx` · digital rain / decode text in `components/matrix.jsx` |
 | Salesforce Case mapping | `lib/salesforce-server.js` → `caseFromTicket` |
 | Catalog | edit `docs/GTS_Assignment_Catalog.json`, then `python3 scripts/build-catalog.py` |
 | Colors, fonts, motion | `app/globals.css` → `:root` tokens |
@@ -159,10 +190,17 @@ app/
   api/sync/route.js         team sync API (Supabase: CAS document + realtime ping + passcode)
   api/salesforce/route.js   Salesforce status / test / create Case (passcode-gated)
   api/keepalive/route.js    daily cron ping (vercel.json) so the Supabase project never pauses
+  api/health/route.js       uptime probe for IT (version + which integrations are configured)
+  api/webhook/route.js      relays GTS events to the configured HTTPS webhook
+  api/linkcheck/route.js    server-side check of the warranty directory links
 components/
   GTSApp.jsx           store, persistence, sync loop + live channel, shell (rail, strip, alerts), overlays, shortcuts
   HomeTab.jsx          overview · activity · settings
-  SalesforceTab.jsx    Quick Log + ticket list
+  SalesforceTab.jsx    Quick Log: 3D stage + HUD, Now serving, walk-in queue, cards/table, bulk bar
+  QuickLogScene.jsx    three.js stage (lazy-loaded)
+  matrix.jsx           digital rain + decode text
+  WarrantyTab.jsx · warranty-ui.jsx   warranty helper (brand picker, card, QR)
+  ManagementSystem.jsx Management → System (hours, targets, rules, security, privacy, integrations…)
   AssignmentsTab.jsx   board / list / archive
   StatsTab.jsx         every number on one page
   ManagementTab.jsx    team · alerts · goal · PIN · connections · exports
@@ -171,7 +209,8 @@ components/
   CatalogTab.jsx · StationTab.jsx · assignment-views.jsx
   ui.jsx               icons, logos, buttons, panels, forms, charts (HoverChart, Heatmap, Ring, SplitBar)
 lib/
-  constants.js · utils.js · store.js (merge) · stats.js · barcode.js · pin.js
+  constants.js · utils.js · store.js (merge) · stats.js · service.js (clock + hours) · barcode.js · pin.js
+  warranty.js · warranty-data.js · webhook.js · handoff.js
   sync.js (client) · sync-server.js (server) · realtime.js
   salesforce.js (client) · salesforce-server.js (server)
   print.js · sounds.js · catalog.js · zays-logo.js
@@ -185,3 +224,5 @@ lib/
 * Local mode is per-browser; the live board needs the Supabase setup.
 * Display tags (SF-0001 / ASG-0001) are assigned on the device; two devices creating a record in the same second can end up with the same tag (ids stay unique).
 * Printing uses the browser’s print dialog.
+* The built-in warranty links were compiled from each manufacturer’s own US site but could not be HTTP-checked from the build environment — run **Management → System → Warranty directory → Check all links** once after deploying (some sites answer bots with 403 but open fine in a browser).
+* The 3D stage needs WebGL; without it (or with *Effects: Off*) the stage shows a 2D glow and everything else works the same.

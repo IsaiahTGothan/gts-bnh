@@ -263,14 +263,13 @@ function build(THREE, host, { apiRef, anchorRef, intensity, initial = {} }) {
   };
   const placeCore = () => {
     const a = anchorRef?.current?.getBoundingClientRect?.();
-    if (a && a.width > 10) {
-      // centre of the HUD column, a little above the middle (the digits sit below)
-      const cy = a.top + Math.min(a.height * 0.42, 70 + a.height * 0.32);
-      core.position.copy(toWorld(a.left + a.width / 2, cy));
-      // fit the outer ring (r ≈ 3.9) inside the column with some air
+    if (a && a.width > 10 && a.height > 10) {
+      // centre of the HUD's empty "core" box, sized so the outer ring (⌀ ≈ 7.8) fits inside it
+      const cx = a.left + a.width / 2; const cy = a.top + a.height / 2;
+      core.position.copy(toWorld(cx, cy));
       const wW = toWorld(a.right, cy).distanceTo(toWorld(a.left, cy));
-      const wH = toWorld(a.left, a.top).distanceTo(toWorld(a.left, a.bottom));
-      core.scale.setScalar(Math.max(0.35, Math.min(1, (wW * 0.82) / 7.8, (wH * 0.62) / 7.8)));
+      const wH = toWorld(cx, a.top).distanceTo(toWorld(cx, a.bottom));
+      core.scale.setScalar(Math.max(0.22, Math.min(1, (wW * 0.86) / 7.8, (wH * 1.0) / 7.8)));
     } else { core.position.set(0, 0, 0); core.scale.setScalar(0.8); }
   };
   const setBeam = () => {

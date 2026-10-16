@@ -1334,7 +1334,7 @@ button.metric:hover { border-color: var(--c); transform: translateY(-1px); }
 .ql-hud-top { display: flex; justify-content: space-between; align-items: center; font-family: var(--font-mono); font-size: 10.5px; letter-spacing: 0.16em; color: rgba(232,238,246,0.62); }
 .ql-rec { display: inline-flex; align-items: center; gap: 8px; }
 .ql-rec-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 10px var(--accent); animation: syncbusy 1.6s ease-in-out infinite; }
-.ql-hud-core { flex: 1; display: grid; place-items: center; }
+.ql-hud-core { flex: 1; min-height: 120px; display: grid; place-items: center; margin: 6px 0; }
 .ql-hud-orb { width: 150px; height: 150px; border-radius: 50%; background: radial-gradient(circle at 40% 35%, rgba(255,255,255,0.9), rgba(34,211,238,0.55) 22%, rgba(34,211,238,0.08) 60%, transparent 70%); box-shadow: 0 0 80px 10px rgba(34,211,238,0.25); animation: orb 4s ease-in-out infinite; }
 @keyframes orb { 0%, 100% { transform: scale(1) } 50% { transform: scale(1.07) } }
 .ql-hud-bottom { display: flex; flex-direction: column; align-items: center; gap: 10px; text-align: center; }
@@ -1590,7 +1590,7 @@ button.metric:hover { border-color: var(--c); transform: translateY(-1px); }
 .matrix-bg { z-index: 0; mask-image: radial-gradient(ellipse at 60% 30%, #000 20%, transparent 80%); -webkit-mask-image: radial-gradient(ellipse at 60% 30%, #000 20%, transparent 80%); }
 .ql-stage.is-collapsed .ql-viz { position: relative; height: 150px; top: 0; }
 .ql-stage.is-display .ql-viz, .ql-stage:fullscreen .ql-viz { position: relative; top: 0; height: auto; align-self: stretch; }
-@media (max-width: 900px) { .ql-viz { position: relative; top: 0; height: 260px; align-self: stretch; } }
+@media (max-width: 900px) { .ql-viz { position: relative; top: 0; height: 330px; align-self: stretch; } }
 
 /* Matrix theme — green phosphor, mono headings, scanlines, digital rain behind everything */
 [data-theme='matrix'] {

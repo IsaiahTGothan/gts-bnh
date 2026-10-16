@@ -245,6 +245,8 @@ function QuickLogStage({ prefill, onPrefillUsed, onConvert, onUnix }) {
   const [last, setLast] = useState(null);
   const [display, setDisplay] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
+  // phones / tablets: don't pop the keyboard (and scroll the stage away) just by opening the tab
+  const [touch] = useState(() => typeof window !== 'undefined' && !!window.matchMedia?.('(pointer: coarse)').matches);
   const d = draft.d;
   const typed = !!(d.orderNumber || d.customerName || d.description || d.serviceType);
 
@@ -291,7 +293,7 @@ function QuickLogStage({ prefill, onPrefillUsed, onConvert, onUnix }) {
     setLast({ tag: t.tag, secs: t.logSeconds, id: t.id, order: t.orderNumber, name: t.customerName, at: Date.now(), done: !!t.serviceEndedAt });
     toast(`${t.tag} logged${t.logSeconds ? ` in ${t.logSeconds}s` : ''}${t.serviceStartedAt && !t.serviceEndedAt ? ' · service clock running' : ''}`, { tone: 'success' });
     draft.reset(); setStartedAt(null);
-    setTimeout(() => orderRef.current?.focus(), 30);
+    if (!touch) setTimeout(() => orderRef.current?.focus(), 30);
     if (then === 'convert') onConvert(t);
     if (then === 'unix') onUnix(t);
   };
@@ -330,7 +332,7 @@ function QuickLogStage({ prefill, onPrefillUsed, onConvert, onUnix }) {
         </header>
         {!collapsed && (
           <div onKeyDown={onKey} onInput={pulseFrom} onFocus={focusFrom} onBlur={blurFrom} onClickCapture={clickFrom}>
-            <TicketFields draft={draft} orderRef={orderRef} autoFocus />
+            <TicketFields draft={draft} orderRef={orderRef} autoFocus={!touch} />
             <div className="ql-actions">
               {typed && <Btn variant="ghost" size="sm" icon="x" onClick={clear}>Clear</Btn>}
               {draft.isBlank && typed && !d.serviceType && !d.description && <Chip size="sm" tone="amber" icon="info">Blank ticket — describe the service</Chip>}
@@ -343,8 +345,8 @@ function QuickLogStage({ prefill, onPrefillUsed, onConvert, onUnix }) {
         )}
       </div>
 
-      <div className="ql-viz" ref={anchorRef}>
-        <StageHUD d={d} digits={digits} brand={brand} startedAt={startedAt} last={last} live={live} order={draft.order} />
+      <div className="ql-viz">
+        <StageHUD coreRef={anchorRef} d={d} digits={digits} brand={brand} startedAt={startedAt} last={last} live={live} order={draft.order} />
       </div>
     </section>
   );
@@ -356,7 +358,7 @@ function Stopwatch({ startedAt }) {
 }
 
 /** What the customer reads on the stage: their order number assembling, the service, the result. */
-function StageHUD({ d, digits, brand, startedAt, last, live, order }) {
+function StageHUD({ coreRef, d, digits, brand, startedAt, last, live, order }) {
   const { state } = useStore();
   const now = useTick(startedAt || last ? 200 : 2000);
   const m = state.management || {};
@@ -379,7 +381,7 @@ function StageHUD({ d, digits, brand, startedAt, last, live, order }) {
         <span className="ql-rec"><span className="ql-rec-dot" />{startedAt ? 'LIVE INTAKE' : 'STANDING BY'}</span>
         <span className="mono">{startedAt ? `${((now - startedAt) / 1000).toFixed(1)}s` : new Date(now).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</span>
       </div>
-      <div className="ql-hud-core" aria-hidden="true">{!live && <span className="ql-hud-orb" />}</div>
+      <div className="ql-hud-core" ref={coreRef} aria-hidden="true">{!live && <span className="ql-hud-orb" />}</div>
       <div className="ql-hud-bottom">
         <div className="ql-digits mono" aria-label={`Order number ${raw}`}>
           {Array.from({ length: slots }).map((_, i) => <span key={i} className={cx('ql-digit', i < raw.length && 'is-on', i === raw.length - 1 && 'is-new')}>{raw[i] || ''}</span>)}

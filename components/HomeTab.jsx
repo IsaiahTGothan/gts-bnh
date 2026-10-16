@@ -280,7 +280,7 @@ function Activity() {
   return (
     <Panel title="Activity feed" icon="activity" sub={`${state.activity.length} events on record (last 400 kept)`}
       actions={<>
-        <Segmented value={filter} onChange={setFilter} options={[{ id: 'all', label: 'All' }, { id: 'assignment', label: 'Assignments' }, { id: 'ticket', label: 'Tickets' }, { id: 'inventory', label: 'Station' }, { id: 'team', label: 'Team' }, { id: 'broadcast', label: 'Alerts' }]} />
+        <Segmented value={filter} onChange={setFilter} options={[{ id: 'all', label: 'All' }, { id: 'assignment', label: 'Assignments' }, { id: 'ticket', label: 'Tickets' }, { id: 'inventory', label: 'Station' }, { id: 'team', label: 'Team' }, { id: 'broadcast', label: 'Alerts' }, { id: 'queue', label: 'Queue' }]} />
         <Select value={tech} onChange={(e) => setTech(e.target.value)} style={{ width: 140 }}><option value="">Everyone</option>{TECHS.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}</Select>
       </>}>
       {items.length === 0 ? <EmptyState icon="activity" title="Quiet so far" desc="Every ticket, status change and note shows up here with who did it." /> : (
