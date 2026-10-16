@@ -49,15 +49,20 @@ const BEAM_FRAG = `
     gl_FragColor = vec4(mix(uColor, vec3(1.0), dash * 0.5), (0.18 + 0.82 * dash) * edge * uOpacity);
   }`;
 
-export default function QuickLogScene({ apiRef, anchorRef, intensity = 'full', onFail, className }) {
+export default function QuickLogScene({ apiRef, anchorRef, intensity = 'full', onFail, className, color = '#22d3ee', rgb = false }) {
   const hostRef = useRef(null);
+  const live = useRef({ color, rgb });
+  live.current = { color, rgb };
+  // keep the running scene in step with the props (also covers the first frame after the lazy load)
+  useEffect(() => { apiRef?.current?.setColor(color); }, [color, apiRef]);
+  useEffect(() => { apiRef?.current?.setRgb(rgb); }, [rgb, apiRef]);
 
   useEffect(() => {
     let disposed = false;
     let cleanup = () => {};
     import('three').then((THREE) => {
       if (disposed || !hostRef.current) return;
-      try { cleanup = build(THREE, hostRef.current, { apiRef, anchorRef, intensity }); }
+      try { cleanup = build(THREE, hostRef.current, { apiRef, anchorRef, intensity, initial: live.current }); }
       catch (e) { console.warn('[gts] 3D stage unavailable', e); onFail?.(e); }
     }).catch((e) => onFail?.(e));
     return () => { disposed = true; cleanup(); if (apiRef) apiRef.current = null; };
@@ -66,7 +71,7 @@ export default function QuickLogScene({ apiRef, anchorRef, intensity = 'full', o
   return <div ref={hostRef} className={className || 'ql-canvas'} aria-hidden="true" />;
 }
 
-function build(THREE, host, { apiRef, anchorRef, intensity }) {
+function build(THREE, host, { apiRef, anchorRef, intensity, initial = {} }) {
   const calm = intensity === 'calm';
   const reduce = typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
   const speed = reduce ? 0.35 : calm ? 0.6 : 1;
@@ -82,8 +87,9 @@ function build(THREE, host, { apiRef, anchorRef, intensity }) {
   const camera = new THREE.PerspectiveCamera(42, 1, 0.1, 120);
   camera.position.set(0, 0.6, 15);
 
-  const color = new THREE.Color('#22d3ee');
-  const target = new THREE.Color('#22d3ee');
+  const color = new THREE.Color(initial.color || '#22d3ee');
+  const target = new THREE.Color(initial.color || '#22d3ee');
+  let rgb = !!initial.rgb;
   const white = new THREE.Color('#ffffff');
   const disposables = [];
   const track = (x) => { disposables.push(x); return x; };
@@ -257,11 +263,15 @@ function build(THREE, host, { apiRef, anchorRef, intensity }) {
   };
   const placeCore = () => {
     const a = anchorRef?.current?.getBoundingClientRect?.();
-    if (a && a.width > 10) core.position.copy(toWorld(a.left + a.width / 2, a.top + a.height * 0.46));
-    else core.position.set(0, 0, 0);
-    const r = host.getBoundingClientRect();
-    const narrow = r.width < 700;
-    core.scale.setScalar(narrow ? 0.72 : 1);
+    if (a && a.width > 10) {
+      // centre of the HUD column, a little above the middle (the digits sit below)
+      const cy = a.top + Math.min(a.height * 0.42, 70 + a.height * 0.32);
+      core.position.copy(toWorld(a.left + a.width / 2, cy));
+      // fit the outer ring (r ≈ 3.9) inside the column with some air
+      const wW = toWorld(a.right, cy).distanceTo(toWorld(a.left, cy));
+      const wH = toWorld(a.left, a.top).distanceTo(toWorld(a.left, a.bottom));
+      core.scale.setScalar(Math.max(0.35, Math.min(1, (wW * 0.82) / 7.8, (wH * 0.62) / 7.8)));
+    } else { core.position.set(0, 0, 0); core.scale.setScalar(0.8); }
   };
   const setBeam = () => {
     if (!beamEl) return;
@@ -291,6 +301,10 @@ function build(THREE, host, { apiRef, anchorRef, intensity }) {
   let mx = 0, my = 0;
   const onMove = (e) => { mx = (e.clientX / window.innerWidth) * 2 - 1; my = (e.clientY / window.innerHeight) * 2 - 1; };
   window.addEventListener('pointermove', onMove, { passive: true });
+  // the HUD column is sticky — follow it while the page scrolls
+  let scrollQueued = false;
+  const onScroll = () => { if (scrollQueued) return; scrollQueued = true; requestAnimationFrame(() => { scrollQueued = false; placeCore(); setBeam(); }); };
+  window.addEventListener('scroll', onScroll, { passive: true });
 
   let energy = 0.2; let flash = 0; let progress = 0;
   const api = {
@@ -303,6 +317,7 @@ function build(THREE, host, { apiRef, anchorRef, intensity }) {
     },
     focus(el) { beamEl = el || null; if (el) setBeam(); },
     setColor(hex) { try { target.set(hex || '#22d3ee'); } catch { /* ignore */ } },
+    setRgb(on) { rgb = !!on; if (!on) target.copy(color); },
     setProgress(n) {
       const lit = Math.max(0, Math.min(10, Math.floor(n || 0)));
       segs.forEach((s, i) => { s.target = i < lit ? 1 : 0; });
@@ -335,6 +350,7 @@ function build(THREE, host, { apiRef, anchorRef, intensity }) {
     const dt = Math.min(0.05, (now - last) / 1000); last = now;
     time += dt * speed;
 
+    if (rgb) target.setHSL((time * 0.12) % 1, 0.9, 0.6); // RGB mode: the whole stage cycles the spectrum
     color.lerp(target, Math.min(1, dt * 3));
     for (const m of colorMats) { if (m.uniforms) m.uniforms.uColor.value.copy(color); else m.color.copy(color); }
     beamMat.uniforms.uColor.value.copy(color);
@@ -429,6 +445,7 @@ function build(THREE, host, { apiRef, anchorRef, intensity }) {
     cancelAnimationFrame(raf); raf = -1;
     ro.disconnect(); io.disconnect();
     window.removeEventListener('pointermove', onMove);
+    window.removeEventListener('scroll', onScroll);
     document.removeEventListener('visibilitychange', onVis);
     for (const d of disposables) { try { d.dispose(); } catch { /* ignore */ } }
     renderer.dispose();

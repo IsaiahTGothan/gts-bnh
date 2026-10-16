@@ -29,6 +29,7 @@ import AssignmentsTab from './AssignmentsTab';
 import CatalogTab from './CatalogTab';
 import StationTab from './StationTab';
 import FirmwareTab from './FirmwareTab';
+import { Decode, MatrixRain } from './matrix';
 import WarrantyTab from './WarrantyTab';
 import { AssignmentDrawer, AssignmentForm, TicketForm } from './assignment-views';
 
@@ -702,7 +703,7 @@ export default function GTSApp() {
       if (modal || drawerId || palette) return;
       const k = e.key;
       const byKey = TABS.find((t) => t.key === k);
-      if (byKey) { goTo(byKey.id, byKey.id === 'home' ? 'overview' : undefined); return; }
+      if (byKey) { e.preventDefault(); goTo(byKey.id, byKey.id === 'home' ? 'overview' : undefined); return; }
       if (k === 'n' || k === 'N') { e.preventDefault(); newAssignment(); return; }
       if (k === 't' || k === 'T') { e.preventDefault(); newTicket(); return; }
       if (k === 'w' || k === 'W') { e.preventDefault(); goTo('salesforce'); setTimeout(() => window.dispatchEvent(new CustomEvent('gts:add-walkin')), 80); return; }
@@ -710,10 +711,11 @@ export default function GTSApp() {
       if (k === '?') { setModal({ type: 'shortcuts' }); return; }
       if (k === 'h' || k === 'H') { goTo('home', 'overview'); return; }
       if (k === '[') { api.setSettings({ railCollapsed: !state?.settings.railCollapsed }); return; }
+      if (k === 'r' || k === 'R') { const on = !state?.settings.rgb; api.setSettings({ rgb: on }); toast(on ? 'RGB mode on — let’s go' : 'RGB mode off', { tone: on ? 'success' : 'info' }); return; }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [modal, drawerId, palette, goTo, newAssignment, newTicket, api, state?.settings.railCollapsed]);
+  }, [modal, drawerId, palette, goTo, newAssignment, newTicket, api, toast, state?.settings.railCollapsed, state?.settings.rgb]);
 
   // ── derived counts for nav badges ────────────────────────────────────
   const counts = useMemo(() => {
@@ -742,6 +744,16 @@ export default function GTSApp() {
   const openWarranty = useCallback((brandId) => { setWarrantyPick(brandId || null); setTab('warranty'); window.scrollTo({ top: 0, behavior: 'smooth' }); }, []);
 
   // ── Management auto-lock after N idle minutes (System → Security) ──────
+  // ── RGB mode (device setting, R key) + "hype" bursts on big moments ───
+  const [hype, setHype] = useState(false);
+  const hypeTimer = useRef(null);
+  const fireHype = useCallback((ms = 8000) => { setHype(true); clearTimeout(hypeTimer.current); hypeTimer.current = setTimeout(() => setHype(false), ms); }, []);
+  const rgbOn = !!state?.settings.rgb;
+  useEffect(() => {
+    const root = document.documentElement;
+    if (rgbOn || hype) root.setAttribute('data-rgb', hype && !rgbOn ? 'hype' : 'on'); else root.removeAttribute('data-rgb');
+  }, [rgbOn, hype]);
+
   const lastInput = useRef(Date.now());
   useEffect(() => {
     const bump = () => { lastInput.current = Date.now(); };
@@ -770,13 +782,13 @@ export default function GTSApp() {
   }, [!!state, purgeDays]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const ctx = useMemo(() => ({
-    state, api, now, toast, sfx, sync, connections, goal, isManager, can, features, warrantyBrands, openWarranty, warrantyPick, setWarrantyPick, emitRef,
+    state, api, now, toast, sfx, sync, connections, goal, isManager, can, features, warrantyBrands, openWarranty, warrantyPick, setWarrantyPick, emitRef, fireHype,
     tab, goTo, homeTab, setHomeTab, fwView, setFwView,
     openAssignment, openTicket, openInventory, openRef, newAssignment, newTicket, confirm, highlight, openUnixScan,
     openPalette: () => setPalette(true), openShortcuts: () => setModal({ type: 'shortcuts' }), openAbout: () => setModal({ type: 'about' }),
     openWhatsNew: () => setModal({ type: 'whatsnew' }), openTechPicker: () => setModal({ type: 'tech' }), openMore: () => setModal({ type: 'more' }),
     counts,
-  }), [state, api, now, toast, sfx, sync, connections, goal, isManager, can, features, warrantyBrands, openWarranty, warrantyPick, emitRef, tab, goTo, homeTab, fwView, openAssignment, openTicket, openInventory, openRef, newAssignment, newTicket, confirm, highlight, openUnixScan, counts]);
+  }), [state, api, now, toast, sfx, sync, connections, goal, isManager, can, features, warrantyBrands, openWarranty, warrantyPick, emitRef, fireHype, tab, goTo, homeTab, fwView, openAssignment, openTicket, openInventory, openRef, newAssignment, newTicket, confirm, highlight, openUnixScan, counts]);
 
   // ── server / pre-hydration render ────────────────────────────────────
   if (!state || booting) return <BootSplash leaving={leaving} />;
@@ -789,6 +801,7 @@ export default function GTSApp() {
     <StoreContext.Provider value={ctx}>
       <div className="bg-layer bg-grid" />
       <div className="bg-layer bg-glow" />
+      {state.settings.theme === 'matrix' && state.settings.effects !== 'off' && <MatrixRain className="bg-layer matrix-bg" opacity={0.11} fontSize={16} speed={0.7} fixed />}
       <div className={`app app-v3 ${state.settings.railCollapsed ? 'is-collapsed' : ''}`}>
         <Rail tech={tech} />
         <div className="app-main">
@@ -844,6 +857,7 @@ export default function GTSApp() {
 
       {palette && <CommandPalette onClose={() => setPalette(false)} />}
       <ToastHost toasts={toasts} onDismiss={dismissToast} />
+      {features.celebrate !== false && <GoalCelebration goal={goal} sfx={sfx} onHype={fireHype} />}
     </StoreContext.Provider>
   );
 }
@@ -992,7 +1006,7 @@ function HourPulse() {
 }
 
 function Strip({ tech }) {
-  const { tab, goTo, openPalette, newTicket, counts, sync, openTechPicker, openMore } = useStore();
+  const { state, api, tab, goTo, openPalette, newTicket, counts, sync, openTechPicker, openMore } = useStore();
   const t = TABS.find((x) => x.id === tab) || TABS[0];
   const others = onlineOthers(sync);
   return (
@@ -1001,7 +1015,7 @@ function Strip({ tech }) {
         <button className="strip-brand hidden-desktop" onClick={() => goTo('home', 'overview')}><GTSMark size={32} /></button>
         <div className="strip-title hidden-mobile">
           <div className="eyebrow">{t.hint}</div>
-          <div className="strip-h">{t.label}</div>
+          <div className="strip-h"><Decode text={t.label} duration={420} /></div>
         </div>
         <div className="strip-center">
           <GoalRing />
@@ -1016,6 +1030,7 @@ function Strip({ tech }) {
         <div className="strip-right">
           <Clock />
           <button className="searchbtn hidden-mobile" onClick={openPalette} title="Command palette (⌘K)"><Icon name="search" size={15} /><span>Search</span><Kbd>⌘K</Kbd></button>
+          <button className={`rgb-toggle hidden-mobile ${state.settings.rgb ? 'is-on' : ''}`} onClick={() => api.setSettings({ rgb: !state.settings.rgb })} title={`RGB mode ${state.settings.rgb ? 'on' : 'off'} (R)`} aria-pressed={!!state.settings.rgb}><span className="rgb-toggle-dot" />RGB</button>
           <Btn variant="primary" icon="zap" onClick={() => newTicket()} className="strip-cta" title="Quick log (T)"><span className="hidden-mobile">Quick log</span></Btn>
           {counts.broadcasts > 0 && <button className="strip-bell hidden-mobile" onClick={() => goTo('management')} title={`${counts.broadcasts} team alert${counts.broadcasts > 1 ? 's' : ''} posted`}><Icon name="bell" size={16} /><span className="badge">{counts.broadcasts}</span></button>}
           <button className="strip-avatar hidden-desktop" onClick={openTechPicker} title="Switch tech"><Avatar tech={tech} /></button>
@@ -1232,6 +1247,7 @@ function ShortcutsModal({ onClose }) {
     ['1 – 9', 'Home · Quick Log · Assignments · Stats · Catalog · Station · Management · Firmware · Warranty'],
     ['⌘ ↵', 'Save the Quick Log'],
     ['[', 'Collapse / expand the sidebar'],
+    ['R', 'RGB mode on / off'],
     ['H', 'Home'],
     ['Esc', 'Close any panel'],
     ['?', 'This list'],
@@ -1292,6 +1308,8 @@ function CommandPalette({ onClose }) {
     if (matches(q, 'warranty repair manufacturer brand')) cmd('Open the warranty helper', 'shield-check', () => openWarranty());
     if (q.trim().length > 1) for (const b of warrantyBrands) if (matches(q.replace(/warranty|repair/gi, ' ').trim() || '~', b.name, b.id)) out.push({ group: 'Warranty', label: `${b.name} warranty`, icon: 'shield-check', hint: 'open', sub: b.url, run: () => openWarranty(b.id) });
     if (matches(q, 'theme dark light toggle')) cmd(`Switch to ${state.settings.theme === 'dark' ? 'light' : 'dark'} theme`, state.settings.theme === 'dark' ? 'sun' : 'moon', () => api.setSettings({ theme: state.settings.theme === 'dark' ? 'light' : 'dark' }));
+    if (matches(q, 'matrix theme green rain hacker')) cmd(state.settings.theme === 'matrix' ? 'Leave the Matrix (dark theme)' : 'Enter the Matrix theme', 'terminal', () => api.setSettings({ theme: state.settings.theme === 'matrix' ? 'dark' : 'matrix' }));
+    if (matches(q, 'rgb mode rainbow hype gamer lights')) cmd(`RGB mode ${state.settings.rgb ? 'off' : 'on'}`, 'sparkles', () => api.setSettings({ rgb: !state.settings.rgb }), 'R');
     for (const t of TECHS) if (matches(q, `sign in as ${t.name} tech switch`)) cmd(`Sign in as ${t.name}`, 'user', () => { api.setTech(t.id); toast(`Signed in as ${t.name}`, { tone: 'success' }); });
     if (matches(q, 'export backup json download')) cmd('Export backup (JSON)', 'download', () => downloadText(`gts-hub-backup-${dayKey()}.json`, api.exportJSON(), 'application/json'));
 
@@ -1358,6 +1376,31 @@ function CommandPalette({ onClose }) {
         </div>
       </div>
     </>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  GOAL CELEBRATION — fires once when today's count crosses the daily goal
+// ═══════════════════════════════════════════════════════════════════════════
+const CONFETTI = ['#22d3ee', '#43b56a', '#a78bfa', '#f5b942', '#f472b6', '#ffffff'];
+function GoalCelebration({ goal, sfx, onHype }) {
+  const prev = useRef(null);
+  const [show, setShow] = useState(null);
+  useEffect(() => {
+    if (!goal) return undefined;
+    const was = prev.current; prev.current = goal.today;
+    if (was == null || was >= goal.perDay || goal.today < goal.perDay) return undefined;
+    setShow(goal.today); sfx('success'); onHype?.(10_000);
+    const t = setTimeout(() => setShow(null), 4200);
+    return () => clearTimeout(t);
+  }, [goal?.today, goal?.perDay]); // eslint-disable-line react-hooks/exhaustive-deps
+  const pieces = useMemo(() => Array.from({ length: 70 }, (_, i) => ({ left: Math.random() * 100, delay: Math.random() * 0.6, dur: 2.2 + Math.random() * 1.6, rot: Math.random() * 720 - 360, c: CONFETTI[i % CONFETTI.length], w: 6 + Math.random() * 6 })), [show]); // eslint-disable-line react-hooks/exhaustive-deps
+  if (show == null) return null;
+  return (
+    <div className="celebrate" aria-live="polite" onClick={() => setShow(null)}>
+      {pieces.map((p, i) => <i key={i} style={{ left: `${p.left}%`, animationDelay: `${p.delay}s`, animationDuration: `${p.dur}s`, background: p.c, width: p.w, height: p.w * 0.45, '--rot': `${p.rot}deg` }} />)}
+      <div className="celebrate-card"><Icon name="star" size={26} /><b>Daily goal hit!</b><span>{show} customers today — goal was {goal?.perDay}. Keep it rolling.</span></div>
+    </div>
   );
 }
 

@@ -8,6 +8,7 @@ import { APP_VERSION, ASG_STATUS_BY_ID, DEFAULT_CHECKLIST, SERVICE_TYPES, TECHS,
 import { ageLevel, buildAlerts, copyText, countBy, dayKey, downloadText, fmtDateTime, fmtElapsed, greeting, isToday, relTime, techLoad, toCSV } from '../lib/utils';
 import { checkOn } from '../lib/store';
 import { computeStats } from '../lib/stats';
+import { fmtDur } from '../lib/service';
 import { onlineOthers, useStore } from './GTSApp';
 import { AgeBadge, Avatar, BarList, Btn, Chip, Donut, EmptyState, Field, HoverChart, Icon, Input, KPI, Panel, Ring, Segmented, Select, StatusChip, Toggle } from './ui';
 
@@ -45,7 +46,7 @@ function HomeGreeting() {
 //  OVERVIEW (V3: hero with the daily goal, hoverable intake, then the board)
 // ═══════════════════════════════════════════════════════════════════════════
 function Overview() {
-  const { state, now, goTo, openRef, newAssignment, newTicket, openAssignment, api, goal, sync } = useStore();
+  const { state, now, goTo, openRef, newAssignment, newTicket, openAssignment, api, goal, sync, counts } = useStore();
   const th = state.settings.overdueDays;
   const live = state.assignments.filter((a) => !a.deletedAt);
   const active = live.filter((a) => !isTerminal(a.status));
@@ -57,6 +58,7 @@ function Overview() {
   const doneToday = live.filter((a) => a.pickedUpAt && isToday(a.pickedUpAt, now)).length + tickets.filter((t) => t.loggedAt && isToday(t.loggedAt, now)).length;
   const avgHold = active.length ? active.reduce((s, a) => s + (now - new Date(a.receivedAt).getTime()), 0) / active.length / 3600_000 : 0;
   const stats7 = useMemo(() => computeStats(state, { days: 14, now }), [state, now]);
+  const todayStats = useMemo(() => computeStats(state, { days: 1, now }), [state, now]);
   const todayTk = tickets.filter((t) => isToday(t.createdAt, now));
   const todayPushed = todayTk.filter((t) => t.loggedAt).length;
   const todayOrders = todayTk.filter((t) => t.orderNumber);
@@ -93,12 +95,16 @@ function Overview() {
             <div className="hero-num"><b>{goal?.today ?? 0}</b><span>customers<br />served</span></div>
             <div className="hero-num"><b>{todayPushed}<small>/{todayTk.length}</small></b><span>pushed to<br />Salesforce</span></div>
             <div className="hero-num"><b>{todayUnix}<small>/{todayOrders.length}</small></b><span>orders in<br />UNIX</span></div>
+            <div className="hero-num"><b>{goal?.thisHour ?? 0}<small>{goal?.perHourToday != null ? ` · ${goal.perHourToday.toFixed(1)}/h` : ''}</small></b><span>customers<br />this hour</span></div>
+            <div className="hero-num"><b>{todayStats.service.samples ? fmtDur(todayStats.service.avgMs) : '—'}</b><span>avg service<br />time today</span></div>
             <div className="hero-num"><b>{speed.samples ? `${speed.avgLogSeconds.toFixed(1)}s` : '—'}</b><span>avg time<br />to log</span></div>
           </div>
           <div className="row wrap" style={{ gap: 8, marginTop: 14 }}>
             <Btn variant="primary" icon="zap" onClick={() => newTicket()}>Quick log</Btn>
             <Btn icon="plus" onClick={() => newAssignment()}>Check in device</Btn>
             <Btn variant="ghost" icon="handoff" onClick={() => goTo('station')}>Shift handoff</Btn>
+            {counts.inService > 0 && <Chip tone="accent" icon="timer" onClick={() => goTo('salesforce')}>{counts.inService} in service</Chip>}
+            {counts.waiting > 0 && <Chip tone="violet" icon="users" onClick={() => goTo('salesforce')}>{counts.waiting} waiting</Chip>}
             {needsUnix > 0 && <Chip tone="amber" icon="hash" onClick={() => goTo('salesforce')}>{needsUnix} order{needsUnix > 1 ? 's' : ''} not in UNIX</Chip>}
             {!state.settings.currentTech && <Chip tone="amber" icon="alert-circle">No tech selected — pick yours</Chip>}
             {state.settings.demoLoaded && <Chip tone="violet" icon="sparkles">Demo data loaded</Chip>}
@@ -250,6 +256,14 @@ const ACTION_META = {
   'goal.set': ['star', 'changed the daily goal', 'accent'],
   'management.update': ['shield', 'updated management settings', null],
   'management.pin': ['lock', 'changed the manager PIN', 'amber'],
+  'ticket.done': ['check', 'finished a service', 'green'],
+  'ticket.start': ['play', 'started a service clock', 'accent'],
+  'ticket.times': ['timer', 'edited service times', 'amber'],
+  'ticket.bulk': ['layers', 'bulk-updated tickets', 'violet'],
+  'queue.add': ['user-plus', 'added a walk-in', 'accent'],
+  'queue.serve': ['play', 'started serving a walk-in', 'green'],
+  'queue.left': ['x', 'marked a walk-in as left', 'amber'],
+  'data.purge': ['shield', 'ran the privacy purge', 'violet'],
 };
 
 function Activity() {
@@ -297,7 +311,7 @@ function Activity() {
 //  SETTINGS
 // ═══════════════════════════════════════════════════════════════════════════
 function Settings() {
-  const { state, api, toast, sync, confirm, sfx } = useStore();
+  const { state, api, toast, sync, confirm, sfx, can } = useStore();
   const s = state.settings;
   const set = (patch) => api.setSettings(patch);
   const fileRef = useRef(null);
@@ -359,8 +373,16 @@ function Settings() {
             <Input value={s.counterPhone} onChange={(e) => set({ counterPhone: e.target.value })} placeholder="(212) 555-0100" style={{ width: 180 }} className="mono" />
           </div>
           <div className="setting">
-            <div><div className="setting-title">Theme</div><div className="setting-desc">Dark is the console look; light is friendlier for a bright counter.</div></div>
-            <Segmented value={s.theme} onChange={(v) => set({ theme: v })} options={[{ id: 'dark', label: 'Dark', icon: 'moon' }, { id: 'light', label: 'Light', icon: 'sun' }]} />
+            <div><div className="setting-title">Theme</div><div className="setting-desc">Dark is the console look, light suits a bright counter, Matrix goes full green-phosphor with digital rain.</div></div>
+            <Segmented value={s.theme} onChange={(v) => set({ theme: v })} options={[{ id: 'dark', label: 'Dark', icon: 'moon' }, { id: 'light', label: 'Light', icon: 'sun' }, { id: 'matrix', label: 'Matrix', icon: 'terminal' }]} />
+          </div>
+          <div className="setting">
+            <div><div className="setting-title">RGB mode</div><div className="setting-desc">Rainbow wave on the main buttons and the 3D stage. Press <kbd className="kbd">R</kbd> anywhere. Turns on by itself for a few seconds when the daily goal is hit.</div></div>
+            <Toggle on={!!s.rgb} onChange={(v) => set({ rgb: v })} label="RGB mode" />
+          </div>
+          <div className="setting">
+            <div><div className="setting-title">3D Quick Log stage</div><div className="setting-desc">On this device. Calm uses fewer particles; Off shows a static glow.</div></div>
+            <Segmented value={s.effects || 'auto'} onChange={(v) => set({ effects: v })} options={[{ id: 'auto', label: 'Auto' }, { id: 'calm', label: 'Calm' }, { id: 'off', label: 'Off' }]} />
           </div>
           <div className="setting">
             <div><div className="setting-title">UI sounds</div><div className="setting-desc">Subtle blips on actions. Off by default for the sales floor.</div></div>
@@ -391,7 +413,7 @@ function Settings() {
           </div>
           <div className="setting">
             <div><div className="setting-title">Reset</div><div className="setting-desc">{sync.status === 'idle' ? 'Delete every record on the shared board — for all three devices. Settings stay.' : 'Delete every record on this device. Settings stay.'}</div></div>
-            <Btn size="sm" variant="danger" icon="alert-triangle" onClick={() => confirm({ title: sync.status === 'idle' ? 'Delete the whole team board?' : 'Delete all data?', danger: true, confirmLabel: 'Delete everything', message: sync.status === 'idle' ? 'Team sync is on, so this wipes tickets, assignments, inventory and activity for everyone — Mike’s and Keeshon’s screens too. Export a backup first if you might need it.' : 'This wipes tickets, assignments, inventory and activity from this browser. Export a backup first if you might need it.', onConfirm: () => { api.clearAll(); toast('All records deleted', { tone: 'warning' }); } })}>Reset</Btn>
+            <Btn size="sm" variant="danger" icon="alert-triangle" disabled={!can('techReset')} title={can('techReset') ? undefined : 'Management has turned this off for techs'} onClick={() => confirm({ title: sync.status === 'idle' ? 'Delete the whole team board?' : 'Delete all data?', danger: true, confirmLabel: 'Delete everything', message: sync.status === 'idle' ? 'Team sync is on, so this wipes tickets, assignments, inventory and activity for everyone — Mike’s and Keeshon’s screens too. Export a backup first if you might need it.' : 'This wipes tickets, assignments, inventory and activity from this browser. Export a backup first if you might need it.', onConfirm: () => { api.clearAll(); toast('All records deleted', { tone: 'warning' }); } })}>Reset</Btn>
           </div>
           <div className="setting">
             <div><div className="setting-title">About</div><div className="setting-desc">GTS Hub v{APP_VERSION} · built for the B&amp;H GTS counter by ZAYS.</div></div>

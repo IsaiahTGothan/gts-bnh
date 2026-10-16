@@ -8,6 +8,7 @@
 //  Tab id stays `salesforce`.
 // ═══════════════════════════════════════════════════════════════════════════
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { SERVICE_BY_ID, SERVICE_TYPES, TECHS, serviceLabel, techName } from '../lib/constants';
 import { sfPushTicket } from '../lib/salesforce';
 import { computeStats, fmtPct } from '../lib/stats';
@@ -16,6 +17,7 @@ import { brandById } from '../lib/warranty';
 import { copyText, cx, dayKey, downloadText, fmtDateTime, isToday, matches, relTime, toCSV } from '../lib/utils';
 import { useStore } from './GTSApp';
 import QuickLogScene from './QuickLogScene';
+import { Decode, MatrixRain } from './matrix';
 import { TicketFields, ticketPayload, useTicketDraft } from './assignment-views';
 import { BrandSwatch } from './warranty-ui';
 import { Avatar, Btn, Chip, EmptyState, Field, Icon, Input, Modal, Segmented, Select, ServiceIcon, TicketStatusChip } from './ui';
@@ -260,8 +262,9 @@ function QuickLogStage({ prefill, onPrefillUsed, onConvert, onUnix }) {
 
   // the scene follows the form
   const brand = d.serviceType === 'warranty' ? brandById(warrantyBrands, d.warrantyBrand) : null;
-  const tint = brand?.color && brand.color !== '#000000' ? brand.color : SERVICE_BY_ID[d.serviceType]?.color || '#22d3ee';
-  useEffect(() => { sceneApi.current?.setColor(tint); }, [tint]);
+  const matrix = state.settings.theme === 'matrix';
+  const rgb = !!state.settings.rgb;
+  const tint = brand?.color && brand.color !== '#000000' ? brand.color : SERVICE_BY_ID[d.serviceType]?.color || (matrix ? '#00ff8c' : '#22d3ee');
   const digits = d.orderNumber.replace(/\D/g, '').length;
   useEffect(() => { sceneApi.current?.setProgress(digits); }, [digits]);
 
@@ -307,7 +310,8 @@ function QuickLogStage({ prefill, onPrefillUsed, onConvert, onUnix }) {
   return (
     <section ref={stageRef} className={cx('ql-stage', live && 'has-scene', display && 'is-display', collapsed && 'is-collapsed')}>
       <div className="ql-backdrop" aria-hidden="true"><i /><i /><i /></div>
-      {live && <QuickLogScene apiRef={sceneApi} anchorRef={anchorRef} intensity={intensity} onFail={() => setSceneFailed(true)} />}
+      {effects !== 'off' && <MatrixRain className="ql-rain" opacity={matrix ? 0.34 : 0.16} fontSize={matrix ? 15 : 14} speed={intensity === 'calm' ? 0.6 : 1} />}
+      {live && <QuickLogScene apiRef={sceneApi} anchorRef={anchorRef} intensity={intensity} color={tint} rgb={rgb} onFail={() => setSceneFailed(true)} />}
       <i className="corner tl" /><i className="corner tr" /><i className="corner bl" /><i className="corner br" />
 
       <div className="ql-card">
@@ -331,8 +335,8 @@ function QuickLogStage({ prefill, onPrefillUsed, onConvert, onUnix }) {
               {typed && <Btn variant="ghost" size="sm" icon="x" onClick={clear}>Clear</Btn>}
               {draft.isBlank && typed && !d.serviceType && !d.description && <Chip size="sm" tone="amber" icon="info">Blank ticket — describe the service</Chip>}
               <span className="grow" />
-              <Btn icon="clipboard" onClick={() => save('convert')} title="Save the ticket and open the overnight intake pre-filled">Add &amp; check in device</Btn>
-              <Btn icon="hash" onClick={() => save('unix')} disabled={!d.orderNumber.trim()} title="Save the ticket and show the UNIX barcode">Add &amp; push to UNIX</Btn>
+              <Btn size="sm" icon="clipboard" onClick={() => save('convert')} title="Save the ticket and open the overnight intake pre-filled">+ Check in</Btn>
+              <Btn size="sm" icon="hash" onClick={() => save('unix')} disabled={!d.orderNumber.trim()} title="Save the ticket and show the UNIX barcode">+ UNIX</Btn>
               <Btn variant="primary" size="lg" icon="plus" onClick={() => save()} className="ql-save">Add to log</Btn>
             </div>
           </div>
@@ -380,7 +384,7 @@ function StageHUD({ d, digits, brand, startedAt, last, live, order }) {
         <div className="ql-digits mono" aria-label={`Order number ${raw}`}>
           {Array.from({ length: slots }).map((_, i) => <span key={i} className={cx('ql-digit', i < raw.length && 'is-on', i === raw.length - 1 && 'is-new')}>{raw[i] || ''}</span>)}
         </div>
-        <div className={cx('ql-status', tone)}>{justSaved ? <Icon name="check-circle" size={16} /> : <span className="ql-status-dot" />}{status}</div>
+        <div className={cx('ql-status', tone)}>{justSaved ? <Icon name="check-circle" size={16} /> : <span className="ql-status-dot" />}<Decode text={status} /></div>
         <div className="ql-hud-chips">
           {svc && <span className="ql-chip" style={{ '--c': svc.color }}><ServiceIcon type={svc.id} size={12} />{svc.label}</span>}
           {brand && <span className="ql-chip" style={{ '--c': brand.color === '#000000' ? '#e8eef6' : brand.color }}><Icon name="shield-check" size={12} />{brand.name} warranty</span>}
@@ -583,7 +587,8 @@ function BulkBar({ selected, view, onAction, onExport, onClear, onAll, total, ca
   const anyUnix = selected.some((t) => t.unixLoggedAt);
   const anyRunning = selected.some((t) => serviceState(t) === 'running' || serviceState(t) === 'paused');
   const allArchived = selected.length && selected.every((t) => t.archivedAt);
-  return (
+  // Portalled to <body>: the animated tab pane is transformed, which would trap position: fixed.
+  return createPortal(
     <div className="bulkbar" role="toolbar" aria-label="Bulk actions">
       <div className="bulkbar-count"><b>{n}</b> selected{n < total && <button type="button" className="linkish" onClick={onAll}>select all {total}</button>}</div>
       <div className="bulkbar-actions">
@@ -605,7 +610,8 @@ function BulkBar({ selected, view, onAction, onExport, onClear, onAll, total, ca
         {canDelete && <Btn size="sm" variant="ghost" icon="trash" onClick={() => onAction('delete')} aria-label="Delete selected" title="Delete" />}
       </div>
       <Btn size="sm" variant="ghost" icon="x" onClick={onClear} title="Clear selection (Esc)" aria-label="Clear selection" />
-    </div>
+    </div>,
+    document.body,
   );
 }
 

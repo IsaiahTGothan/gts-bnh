@@ -27,7 +27,7 @@ export function useTicketDraft(prefill) {
   const clockDefault = m.serviceClock === 'done' ? 'done' : 'start';
   const [d, setD] = useState(() => ({ ...EMPTY_TICKET, tech: state.settings.currentTech, clock: clockDefault, ...(prefill || {}) }));
   const [attempted, setAttempted] = useState(false);
-  const set = (k, v) => setD((x) => ({ ...x, [k]: v, ...(k === 'serviceType' && v !== 'warranty' && !x.warrantyBrand ? {} : {}) }));
+  const set = (k, v) => setD((x) => ({ ...x, [k]: v }));
   const load = (obj) => setD((x) => ({ ...x, ...obj }));
   // follow the signed-in tech if it changes while the form is open
   const currentTech = state.settings.currentTech;
@@ -65,7 +65,7 @@ export function TicketFields({ draft, autoFocus, compactTypes, showClock = true,
   const nextField = (e) => { if (e.key === 'Enter' && !e.metaKey && !e.ctrlKey) { e.preventDefault(); const f = e.currentTarget.closest('.form-grid')?.querySelectorAll('input, textarea'); if (!f) return; const i = [...f].indexOf(e.currentTarget); f[i + 1]?.focus(); } };
   return (
     <div className="form-grid">
-      <Field label="Order number" optional={!m.requireOrderNumber} required={!!m.requireOrderNumber} error={errors.orderNumber}
+      <Field group label="Order number" optional={!m.requireOrderNumber} required={!!m.requireOrderNumber} error={errors.orderNumber}
         hint={dupe ? undefined : order === 'bad' && m.orderCheck !== 'off' ? 'Doesn’t look like a B&H order number — double-check the digits.' : 'Order numbers are what we mainly need — name is a fallback.'}>
         <div className="order-wrap">
           <Input ref={ref} className={cx('mono input-lg order-input', order === 'ok' && digitsTyped >= 6 && 'is-good', order === 'bad' && m.orderCheck !== 'off' && 'is-warn')} inputMode="numeric" autoComplete="off" placeholder="e.g. 1095847721" value={d.orderNumber}
@@ -77,11 +77,11 @@ export function TicketFields({ draft, autoFocus, compactTypes, showClock = true,
       <Field label="Customer name" optional>
         <Input className="input-lg" placeholder="Walk-up if unknown" autoComplete="off" value={d.customerName} onChange={(e) => set('customerName', e.target.value)} onKeyDown={nextField} />
       </Field>
-      <Field label="Type of service" optional={!isBlank && !m.requireServiceType} required={!!m.requireServiceType} error={errors.serviceType} className="span-2">
+      <Field group label="Type of service" optional={!isBlank && !m.requireServiceType} required={!!m.requireServiceType} error={errors.serviceType} className="span-2">
         <TypePicker value={d.serviceType} onChange={(v) => set('serviceType', v)} compact={compactTypes} />
       </Field>
       {warrantyOn && (
-        <Field label="Warranty — which brand?" optional hint="Opens the manufacturer’s official page; the customer can scan the QR." className="span-2">
+        <Field group label="Warranty — which brand?" optional hint="Opens the manufacturer’s official page; the customer can scan the QR." className="span-2">
           <WarrantyPicker value={d.warrantyBrand} onChange={(v) => set('warrantyBrand', v)} />
         </Field>
       )}
@@ -90,7 +90,7 @@ export function TicketFields({ draft, autoFocus, compactTypes, showClock = true,
           <Input className="mono" autoComplete="off" placeholder="On the device or box" value={d.serial || ''} onChange={(e) => set('serial', e.target.value)} />
         </Field>
       )}
-      <Field label="Description" optional={!isBlank} error={errors.description} hint={isBlank ? 'No order # or name — describe the service so the ticket means something later.' : 'What was done or requested.'} className="span-2">
+      <Field group label="Description" optional={!isBlank} error={errors.description} hint={isBlank ? 'No order # or name — describe the service so the ticket means something later.' : 'What was done or requested.'} className="span-2">
         <Textarea placeholder="e.g. Firmware update Sony A7R V 2.00 → 3.01 via card; paired with iPhone." value={d.description} onChange={(e) => set('description', e.target.value)} rows={2} />
         {templates.length > 0 && (
           <span className="templates">
@@ -102,8 +102,8 @@ export function TicketFields({ draft, autoFocus, compactTypes, showClock = true,
         <TechSelect value={d.tech} onChange={(v) => set('tech', v)} />
       </Field>
       {showClock && (
-        <Field label="Service clock" hint={d.clock === 'start' ? 'Runs from your first keystroke until you hit Done on the ticket.' : d.clock === 'done' ? 'Logs it as finished — duration = first keystroke → save.' : 'No service time recorded for this ticket.'}>
-          <Segmented value={d.clock || 'start'} onChange={(v) => set('clock', v)} options={[{ id: 'start', label: 'Keep running', icon: 'play' }, { id: 'done', label: 'Already done', icon: 'check' }, { id: 'none', label: 'Off' }]} />
+        <Field group label="Service clock" hint={d.clock === 'start' ? 'Runs from your first keystroke until you hit Done on the ticket.' : d.clock === 'done' ? 'Logs it as finished — duration = first keystroke → save.' : 'No service time recorded for this ticket.'}>
+          <Segmented value={d.clock || 'start'} onChange={(v) => set('clock', v)} options={[{ id: 'start', label: 'Running', icon: 'play' }, { id: 'done', label: 'Done', icon: 'check' }, { id: 'none', label: 'Off' }]} />
         </Field>
       )}
     </div>

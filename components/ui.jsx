@@ -292,9 +292,11 @@ export function KPI({ label, value, icon, tone, delta, onClick, style, className
 }
 
 // ─── Forms ─────────────────────────────────────────────────────────────────
-export function Field({ label, required, optional, hint, error, children, className, style }) {
+/** `group` renders a <div> instead of a <label> — use it when the field holds buttons (a label would re-route clicks). */
+export function Field({ label, required, optional, hint, error, children, className, style, group }) {
+  const Tag = group ? 'div' : 'label';
   return (
-    <label className={cx('field', className)} style={style}>
+    <Tag className={cx('field', className)} style={style}>
       {label && (
         <span className="field-label">
           {label}
@@ -304,7 +306,7 @@ export function Field({ label, required, optional, hint, error, children, classN
       )}
       {children}
       {error ? <span className="field-error">{error}</span> : hint ? <span className="field-hint">{hint}</span> : null}
-    </label>
+    </Tag>
   );
 }
 
@@ -692,6 +694,32 @@ export function SplitBar({ a, b, labelA, labelB, colorA = 'var(--green)', colorB
     <div className="split">
       <div className="split-bar"><i style={{ width: `${pa}%`, background: colorA }} /><i style={{ width: `${100 - pa}%`, background: colorB }} /></div>
       <div className="split-legend"><span><i style={{ background: colorA }} />{labelA} · <b>{a}</b> ({pa}%)</span><span><i style={{ background: colorB }} />{labelB} · <b>{b}</b> ({100 - pa}%)</span></div>
+    </div>
+  );
+}
+
+/**
+ * V4 hoverable column chart (customers per hour, service-time histogram).
+ * items: [{ label, value, tip?, color?, hot? }]
+ */
+export function Columns({ items, height = 150, format = (v) => v, unit = '', avgLine, empty = 'No data yet' }) {
+  const [hover, setHover] = useState(null);
+  const max = Math.max(1, avgLine || 0, ...items.map((i) => i.value));
+  const total = items.reduce((s, i) => s + i.value, 0);
+  const h = hover != null ? items[hover] : null;
+  return (
+    <div className="cols-chart" onMouseLeave={() => setHover(null)}>
+      <div className="cols-plot" style={{ height }}>
+        {avgLine > 0 && <span className="cols-avg" style={{ bottom: `${(avgLine / max) * 100}%` }}><em>avg {format(avgLine)}</em></span>}
+        {items.map((it, i) => (
+          <button type="button" key={`${it.label}-${i}`} className={cx('cols-col', hover === i && 'is-hover', it.hot && 'is-hot')} onMouseEnter={() => setHover(i)} onFocus={() => setHover(i)} onTouchStart={() => setHover(i)} aria-label={`${it.label}: ${format(it.value)}${unit}`}>
+            <span className="cols-val">{it.value ? format(it.value) : ''}</span>
+            <i style={{ height: `${(it.value / max) * 100}%`, '--c': it.color || 'var(--accent)' }} />
+          </button>
+        ))}
+      </div>
+      <div className="cols-x">{items.map((it, i) => <span key={i} className={cx(it.hot && 'is-hot')}>{it.label}</span>)}</div>
+      <div className="cols-foot">{h ? <><b>{h.label}</b> · {h.tip || `${format(h.value)}${unit}`}</> : total ? 'Hover a column for the exact number' : empty}</div>
     </div>
   );
 }
