@@ -11,67 +11,132 @@ import { ACCESSORIES, ASG_STATUSES, ASG_STATUS_BY_ID, NOTE_TEMPLATES, PRIORITIES
 import { ASSIGNMENT_TYPES, CATEGORY_BY_ID } from '../lib/catalog';
 import { claimTicketHTML, intakeTagHTML, printHTML } from '../lib/print';
 import { computePriority, copyText, cx, effectivePriority, fmtDateTime, fmtElapsedLong, fmtTime, formatPhone, isValidEmail, isValidPhone, relTime, smsHref, telHref } from '../lib/utils';
+import { checkOrder } from '../lib/service';
 import { useStore } from './GTSApp';
-import { AgeBadge, Avatar, Btn, CheckPills, Checkbox, Chip, Drawer, Field, Icon, Input, Modal, PriorityChip, Select, ServiceIcon, StatusChip, TechSelect, Textarea, Toggle, TypePicker } from './ui';
+import { WarrantyPicker } from './warranty-ui';
+import { AgeBadge, Avatar, Btn, CheckPills, Checkbox, Chip, Drawer, Field, Icon, Input, Modal, PriorityChip, Segmented, Select, ServiceIcon, StatusChip, TechSelect, Textarea, Toggle, TypePicker } from './ui';
 
 // ═══════════════════════════════════════════════════════════════════════════
 //  TICKET (Salesforce tab)
 // ═══════════════════════════════════════════════════════════════════════════
+const EMPTY_TICKET = { orderNumber: '', customerName: '', serviceType: null, description: '', warrantyBrand: null, serial: '', queueId: null };
+
 export function useTicketDraft(prefill) {
   const { state } = useStore();
-  const [d, setD] = useState(() => ({
-    orderNumber: '', customerName: '', serviceType: null, description: '',
-    tech: state.settings.currentTech, ...(prefill || {}),
-  }));
+  const m = state.management || {};
+  const clockDefault = m.serviceClock === 'done' ? 'done' : 'start';
+  const [d, setD] = useState(() => ({ ...EMPTY_TICKET, tech: state.settings.currentTech, clock: clockDefault, ...(prefill || {}) }));
   const [attempted, setAttempted] = useState(false);
-  const set = (k, v) => setD((x) => ({ ...x, [k]: v }));
+  const set = (k, v) => setD((x) => ({ ...x, [k]: v, ...(k === 'serviceType' && v !== 'warranty' && !x.warrantyBrand ? {} : {}) }));
+  const load = (obj) => setD((x) => ({ ...x, ...obj }));
   // follow the signed-in tech if it changes while the form is open
   const currentTech = state.settings.currentTech;
   useEffect(() => { if (!prefill) setD((x) => ({ ...x, tech: currentTech })); }, [currentTech]); // eslint-disable-line react-hooks/exhaustive-deps
   const isBlank = !d.orderNumber.trim() && !d.customerName.trim();
+  const order = checkOrder(d.orderNumber, m);
   const problems = {};
-  if (isBlank && !d.serviceType && !d.description.trim()) problems.description = 'Blank tickets need at least a service type or a short description of the service.';
+  if (isBlank && !d.serviceType && !d.description.trim() && !d.warrantyBrand) problems.description = 'Blank tickets need at least a service type or a short description of the service.';
+  if (m.requireServiceType && !d.serviceType) problems.serviceType = 'Pick a service type (required by Management).';
+  if (m.requireOrderNumber && !d.orderNumber.trim()) problems.orderNumber = 'An order number is required (Management → System → Ticket rules).';
+  if (order === 'bad' && m.orderCheck === 'block') problems.orderNumber = 'That doesn’t look like a B&H order number.';
   const valid = Object.keys(problems).length === 0;
   const errors = attempted ? problems : {};
-  const reset = () => { setD({ orderNumber: '', customerName: '', serviceType: null, description: '', tech: state.settings.currentTech }); setAttempted(false); };
-  return { d, set, errors, valid, isBlank, reset, attempt: () => setAttempted(true) };
+  // same order number logged recently? (warn, never block)
+  const dupe = useMemo(() => {
+    const o = d.orderNumber.trim(); if (!o || o.length < 5) return null;
+    const win = (Number(m.duplicateWindowHours) || 24) * 3_600_000;
+    return state.tickets.find((t) => !t.deletedAt && t.orderNumber === o && Date.now() - new Date(t.createdAt).getTime() < win && t.id !== prefill?.id) || null;
+  }, [d.orderNumber, state.tickets, m.duplicateWindowHours, prefill?.id]);
+  const reset = () => { setD({ ...EMPTY_TICKET, tech: state.settings.currentTech, clock: clockDefault }); setAttempted(false); };
+  return { d, set, load, errors, valid, isBlank, reset, order, dupe, problems, attempt: () => setAttempted(true) };
 }
 
-/** Shared fields — used by the inline Quick Log panel and the modal. */
-export function TicketFields({ draft, autoFocus, compactTypes }) {
-  const { d, set, errors, isBlank } = draft;
-  const ref = useRef(null);
-  useEffect(() => { if (autoFocus) ref.current?.focus(); }, [autoFocus]);
+/** Shared fields — used by the Quick Log stage, the T modal and the edit modal. */
+export function TicketFields({ draft, autoFocus, compactTypes, showClock = true, orderRef }) {
+  const { state, openTicket } = useStore();
+  const { d, set, errors, isBlank, order, dupe } = draft;
+  const m = state.management || {};
+  const localRef = useRef(null);
+  const ref = orderRef || localRef;
+  useEffect(() => { if (autoFocus) ref.current?.focus(); }, [autoFocus]); // eslint-disable-line react-hooks/exhaustive-deps
+  const digitsTyped = d.orderNumber.replace(/\D/g, '').length;
+  const templates = (m.templates || []).filter(Boolean);
+  const warrantyOn = d.serviceType === 'warranty' && m.features?.warranty !== false;
+  const nextField = (e) => { if (e.key === 'Enter' && !e.metaKey && !e.ctrlKey) { e.preventDefault(); const f = e.currentTarget.closest('.form-grid')?.querySelectorAll('input, textarea'); if (!f) return; const i = [...f].indexOf(e.currentTarget); f[i + 1]?.focus(); } };
   return (
     <div className="form-grid">
-      <Field label="Order number" optional hint="Order numbers are what we mainly need — name is a fallback.">
-        <Input ref={ref} className="mono input-lg" inputMode="numeric" placeholder="e.g. 1095847721" value={d.orderNumber} onChange={(e) => set('orderNumber', e.target.value)} />
+      <Field label="Order number" optional={!m.requireOrderNumber} required={!!m.requireOrderNumber} error={errors.orderNumber}
+        hint={dupe ? undefined : order === 'bad' && m.orderCheck !== 'off' ? 'Doesn’t look like a B&H order number — double-check the digits.' : 'Order numbers are what we mainly need — name is a fallback.'}>
+        <div className="order-wrap">
+          <Input ref={ref} className={cx('mono input-lg order-input', order === 'ok' && digitsTyped >= 6 && 'is-good', order === 'bad' && m.orderCheck !== 'off' && 'is-warn')} inputMode="numeric" autoComplete="off" placeholder="e.g. 1095847721" value={d.orderNumber}
+            onChange={(e) => set('orderNumber', e.target.value.replace(/[^\d\w-]/g, ''))} onKeyDown={nextField} />
+          <span className="order-count mono" aria-hidden="true">{order === 'ok' && digitsTyped >= 6 ? <Icon name="check" size={13} /> : digitsTyped ? `${digitsTyped}` : ''}</span>
+        </div>
+        {dupe && <span className="field-hint is-warn"><Icon name="alert-triangle" size={11} /> Already logged as <button type="button" className="linkish" onClick={() => openTicket(dupe.id)}>{dupe.tag}</button> {relTime(dupe.createdAt)} — same customer?</span>}
       </Field>
       <Field label="Customer name" optional>
-        <Input className="input-lg" placeholder="Walk-up if unknown" value={d.customerName} onChange={(e) => set('customerName', e.target.value)} />
+        <Input className="input-lg" placeholder="Walk-up if unknown" autoComplete="off" value={d.customerName} onChange={(e) => set('customerName', e.target.value)} onKeyDown={nextField} />
       </Field>
-      <Field label="Type of service" optional={!isBlank} className="span-2">
+      <Field label="Type of service" optional={!isBlank && !m.requireServiceType} required={!!m.requireServiceType} error={errors.serviceType} className="span-2">
         <TypePicker value={d.serviceType} onChange={(v) => set('serviceType', v)} compact={compactTypes} />
       </Field>
+      {warrantyOn && (
+        <Field label="Warranty — which brand?" optional hint="Opens the manufacturer’s official page; the customer can scan the QR." className="span-2">
+          <WarrantyPicker value={d.warrantyBrand} onChange={(v) => set('warrantyBrand', v)} />
+        </Field>
+      )}
+      {warrantyOn && (
+        <Field label="Serial / IMEI" optional hint="Saves a step when the claim needs it.">
+          <Input className="mono" autoComplete="off" placeholder="On the device or box" value={d.serial || ''} onChange={(e) => set('serial', e.target.value)} />
+        </Field>
+      )}
       <Field label="Description" optional={!isBlank} error={errors.description} hint={isBlank ? 'No order # or name — describe the service so the ticket means something later.' : 'What was done or requested.'} className="span-2">
-        <Textarea placeholder="e.g. Firmware update Sony A7R V 2.00 → 3.01 via card; paired with iPhone." value={d.description} onChange={(e) => set('description', e.target.value)} rows={3} />
+        <Textarea placeholder="e.g. Firmware update Sony A7R V 2.00 → 3.01 via card; paired with iPhone." value={d.description} onChange={(e) => set('description', e.target.value)} rows={2} />
+        {templates.length > 0 && (
+          <span className="templates">
+            {templates.slice(0, 8).map((tpl) => <button type="button" key={tpl} className="tpl" onClick={() => set('description', d.description.trim() ? `${d.description.trim()} · ${tpl}` : tpl)} title="Add to the description">{tpl}</button>)}
+          </span>
+        )}
       </Field>
       <Field label="Tech">
         <TechSelect value={d.tech} onChange={(v) => set('tech', v)} />
       </Field>
+      {showClock && (
+        <Field label="Service clock" hint={d.clock === 'start' ? 'Runs from your first keystroke until you hit Done on the ticket.' : d.clock === 'done' ? 'Logs it as finished — duration = first keystroke → save.' : 'No service time recorded for this ticket.'}>
+          <Segmented value={d.clock || 'start'} onChange={(v) => set('clock', v)} options={[{ id: 'start', label: 'Keep running', icon: 'play' }, { id: 'done', label: 'Already done', icon: 'check' }, { id: 'none', label: 'Off' }]} />
+        </Field>
+      )}
     </div>
   );
 }
 
+/** Turns a draft + the stopwatch start into the ticket payload (service clock included). */
+export function ticketPayload(d, startedAt) {
+  const now = new Date().toISOString();
+  const start = startedAt ? new Date(startedAt).toISOString() : now;
+  const { clock, ...rest } = d;
+  return {
+    ...rest,
+    warrantyBrand: d.serviceType === 'warranty' ? d.warrantyBrand : null,
+    logSeconds: startedAt ? (Date.now() - startedAt) / 1000 : null,
+    serviceStartedAt: clock === 'none' ? null : start,
+    serviceEndedAt: clock === 'done' ? now : null,
+  };
+}
+
 export function TicketForm({ prefill, onClose, onSave }) {
   const draft = useTicketDraft(prefill);
+  const [startedAt] = useState(() => Date.now());
+  const save = () => { if (!draft.valid) { draft.attempt(); return; } onSave(ticketPayload(draft.d, startedAt)); };
   return (
-    <Modal title="New Salesforce ticket" sub="Log the interaction now, push it to Salesforce or Assignments later." onClose={onClose} icon="cloud"
+    <Modal title="Quick log" sub="Log the customer now — push to Salesforce, UNIX or Assignments from the card." onClose={onClose} icon="zap" size="lg"
       footer={<>
-        <span className="faint" style={{ fontSize: 12 }}>Tip: press <kbd className="kbd">T</kbd> anywhere to open this.</span>
-        <div className="row"><Btn variant="ghost" onClick={onClose}>Cancel</Btn><Btn variant="primary" icon="plus" disabled={!draft.valid} onClick={() => onSave(draft.d)}>Add to log</Btn></div>
+        <span className="faint" style={{ fontSize: 12 }}>Press <kbd className="kbd">T</kbd> anywhere · <kbd className="kbd">⌘ ↵</kbd> saves</span>
+        <div className="row"><Btn variant="ghost" onClick={onClose}>Cancel</Btn><Btn variant="primary" icon="plus" onClick={save}>Add to log</Btn></div>
       </>}>
-      <TicketFields draft={draft} autoFocus />
+      <div onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); save(); } }}>
+        <TicketFields draft={draft} autoFocus />
+      </div>
     </Modal>
   );
 }

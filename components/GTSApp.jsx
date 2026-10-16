@@ -16,6 +16,9 @@ import { openLiveChannel } from '../lib/realtime';
 import { play } from '../lib/sounds';
 import { intakeTagHTML, printHTML } from '../lib/print';
 import { buildAlerts, dayKey, downloadText, greeting, matches, nextTag, nowISO, relTime, uid } from '../lib/utils';
+import { fmtDur, serviceActions, serviceMs, serviceState } from '../lib/service';
+import { sendWebhook } from '../lib/webhook';
+import { allWarrantyBrands } from '../lib/warranty';
 import { UnixScanModal } from './UnixScan';
 import { Avatar, Btn, Chip, ConfirmDialog, GTSLogo, GTSMark, Icon, Kbd, Modal, Ring, ZaysLogo } from './ui';
 import HomeTab from './HomeTab';
@@ -26,6 +29,7 @@ import AssignmentsTab from './AssignmentsTab';
 import CatalogTab from './CatalogTab';
 import StationTab from './StationTab';
 import FirmwareTab from './FirmwareTab';
+import WarrantyTab from './WarrantyTab';
 import { AssignmentDrawer, AssignmentForm, TicketForm } from './assignment-views';
 
 // ─── Context ───────────────────────────────────────────────────────────────
@@ -38,11 +42,23 @@ const ACTIVITY_CAP = 400;
 //  STORE HOOK — every mutation goes through here so it can stamp
 //  updatedAt, attribute the tech and append to the activity feed.
 // ═══════════════════════════════════════════════════════════════════════════
+function mergeById(base, changed) {
+  const map = new Map(changed.map((x) => [x.id, x]));
+  return base.map((x) => map.get(x.id) || x);
+}
+
 function useGTSStore() {
   const [state, setState] = useState(null);
   const [now, setNow] = useState(() => Date.now());
   const stateRef = useRef(state);
   stateRef.current = state;
+  // Outgoing webhook (Management → System → Integrations). Fire-and-forget.
+  const emitRef = useRef(null);
+  emitRef.current = (event, record) => {
+    const s = stateRef.current; const m = s?.management;
+    if (!m?.webhookUrl || !(m.webhookEvents || []).includes(event)) return;
+    sendWebhook(m.webhookUrl, event, webhookPayload(event, record, s), s.settings.syncPasscode).catch(() => {});
+  };
 
   // clock for live counters
   useEffect(() => {
@@ -113,9 +129,110 @@ function useGTSStore() {
         status: 'open', createdAt: ts, updatedAt: ts,
         logSeconds: Number.isFinite(data.logSeconds) && data.logSeconds > 0 ? Math.round(data.logSeconds * 10) / 10 : null,
         unixLoggedAt: null, unixBy: null,
+        // V4 service clock: start → done (pauses excluded)
+        serviceStartedAt: data.serviceStartedAt || null, serviceEndedAt: data.serviceEndedAt || null, servicePausedAt: null, servicePausedMs: 0,
+        // V4 warranty requests
+        warrantyBrand: data.serviceType === 'warranty' || data.warrantyBrand ? (data.warrantyBrand || null) : null,
+        serial: (data.serial || '').trim(), queueId: data.queueId || null,
       };
-      mutate((p) => act({ ...p, tickets: [created, ...p.tickets] }, 'ticket.create', created.tag, created.orderNumber ? `Order ${created.orderNumber}` : created.customerName || serviceLabel(created.serviceType)));
+      mutate((p) => {
+        let next = { ...p, tickets: [created, ...p.tickets] };
+        if (created.queueId) next.queue = (p.queue || []).map((q) => (q.id === created.queueId ? stamp(q, { status: 'served', ticketId: created.id, servedAt: q.servedAt || created.serviceStartedAt || ts, servedBy: p.settings.currentTech }) : q));
+        return act(next, 'ticket.create', created.tag, created.orderNumber ? `Order ${created.orderNumber}` : created.customerName || serviceLabel(created.serviceType));
+      });
+      emitRef.current?.('ticket.create', created);
+      if (created.serviceEndedAt) emitRef.current?.('ticket.done', created);
       return created;
+    },
+    // ── V4 bulk actions on many tickets at once (one activity entry) ─────
+    //  action: pushed · open · unix · unix-clear · archive · unarchive · done · tech · type · delete · restore
+    bulkTickets: (ids, action, arg) => {
+      const set = new Set(ids);
+      const cur = stateRef.current;
+      const ts = nowISO();
+      const me = cur.settings.currentTech;
+      const touched = [];
+      const patchFor = (t) => {
+        switch (action) {
+          case 'pushed': return t.status === 'open' ? { status: 'logged', loggedAt: ts, loggedBy: me, sfPushedVia: 'manual' } : null;
+          case 'open': return t.status === 'logged' ? { status: 'open', loggedAt: null, loggedBy: null, sfCaseNumber: null, sfCaseId: null, sfUrl: null } : t.archivedAt ? { archivedAt: null } : null;
+          case 'unix': return t.orderNumber && !t.unixLoggedAt ? { unixLoggedAt: ts, unixBy: me } : null;
+          case 'unix-clear': return t.unixLoggedAt ? { unixLoggedAt: null, unixBy: null } : null;
+          case 'archive': return t.archivedAt ? null : { archivedAt: ts, archivedBy: me };
+          case 'unarchive': return t.archivedAt ? { archivedAt: null, archivedBy: null } : null;
+          case 'done': { const p = serviceActions.finish(t, ts); return Object.keys(p).length ? p : null; }
+          case 'tech': return t.tech === arg ? null : { tech: arg || null };
+          case 'type': return t.serviceType === arg ? null : { serviceType: arg || null };
+          case 'delete': return t.deletedAt ? null : { deletedAt: ts };
+          case 'restore': return t.deletedAt ? { deletedAt: null } : null;
+          default: return null;
+        }
+      };
+      const tickets = cur.tickets.map((t) => {
+        if (!set.has(t.id)) return t;
+        const patch = patchFor(t);
+        if (!patch) return t;
+        touched.push(t.id);
+        return { ...t, ...patch, updatedAt: ts };
+      });
+      if (!touched.length) return 0;
+      const LABEL = { pushed: 'marked pushed to Salesforce', open: 'moved back to Open', unix: 'marked entered in UNIX', 'unix-clear': 'marked not in UNIX', archive: 'archived', unarchive: 'restored from the archive', done: 'service marked done', tech: `reassigned to ${techName(arg)}`, type: `set to ${serviceLabel(arg)}`, delete: 'deleted', restore: 'restored' };
+      mutate((p) => act({ ...p, tickets: mergeById(p.tickets, tickets.filter((t) => touched.includes(t.id))) }, 'ticket.bulk', `${touched.length} ticket${touched.length === 1 ? '' : 's'}`, LABEL[action] || action));
+      if (action === 'done') for (const id of touched) emitRef.current?.('ticket.done', tickets.find((t) => t.id === id));
+      return touched.length;
+    },
+    // ── V4 service clock (start · pause · resume · finish · clear) ────────
+    serviceAction: (id, action) => {
+      const cur = stateRef.current;
+      const tk = cur.tickets.find((x) => x.id === id); if (!tk) return;
+      const patch = serviceActions[action]?.(tk);
+      if (!patch || !Object.keys(patch).length) return;
+      const after = { ...tk, ...patch };
+      mutate((p) => {
+        const next = { ...p, tickets: p.tickets.map((x) => (x.id === id ? stamp(x, patch) : x)) };
+        if (action === 'finish') return act(next, 'ticket.done', tk.tag, `Service done in ${fmtDur(serviceMs(after))}`);
+        if (action === 'start') return act(next, 'ticket.start', tk.tag, 'Service clock started');
+        return next;
+      });
+      if (action === 'finish') emitRef.current?.('ticket.done', after);
+    },
+    setServiceTimes: (id, patch) => mutate((p) => {
+      const t = p.tickets.find((x) => x.id === id); if (!t) return p;
+      const next = { ...p, tickets: p.tickets.map((x) => (x.id === id ? stamp(x, patch) : x)) };
+      return act(next, 'ticket.times', t.tag, `Times edited → ${serviceState({ ...t, ...patch }) === 'none' ? 'no clock' : fmtDur(serviceMs({ ...t, ...patch }))}`);
+    }),
+
+    // ── V4 walk-in queue ───────────────────────────────────────────────
+    addQueue: (data) => {
+      const ts = nowISO();
+      const rec = { id: uid('q'), name: (data.name || '').trim() || 'Walk-up', reason: (data.reason || '').trim(), serviceType: data.serviceType || null, orderNumber: (data.orderNumber || '').trim(), status: 'waiting', joinedAt: ts, createdAt: ts, updatedAt: ts, addedBy: stateRef.current.settings.currentTech || null };
+      mutate((p) => act({ ...p, queue: [rec, ...(p.queue || [])] }, 'queue.add', rec.name, rec.reason || 'Joined the queue'));
+      return rec;
+    },
+    updateQueue: (id, patch) => mutate((p) => ({ ...p, queue: (p.queue || []).map((q) => (q.id === id ? stamp(q, patch) : q)) })),
+    serveQueue: (id) => mutate((p) => {
+      const q = (p.queue || []).find((x) => x.id === id); if (!q) return p;
+      return act({ ...p, queue: p.queue.map((x) => (x.id === id ? stamp(x, { status: 'serving', servedAt: nowISO(), servedBy: p.settings.currentTech }) : x)) }, 'queue.serve', q.name, 'Now serving');
+    }),
+    leaveQueue: (id) => mutate((p) => {
+      const q = (p.queue || []).find((x) => x.id === id); if (!q) return p;
+      return act({ ...p, queue: p.queue.map((x) => (x.id === id ? stamp(x, { status: 'left', leftAt: nowISO() }) : x)) }, 'queue.left', q.name, 'Left before service');
+    }),
+    requeue: (id) => mutate((p) => ({ ...p, queue: (p.queue || []).map((x) => (x.id === id ? stamp(x, { status: 'waiting', servedAt: null, servedBy: null, leftAt: null }) : x)) })),
+    removeQueue: (id) => mutate((p) => ({ ...p, queue: (p.queue || []).map((x) => (x.id === id ? stamp(x, { deletedAt: nowISO() }) : x)) })),
+
+    // ── V4 privacy: anonymise customers older than N days ───────────────
+    purgePII: (days) => {
+      const cur = stateRef.current;
+      const cutoff = Date.now() - Math.max(1, Number(days) || 0) * 86_400_000;
+      const old = (iso) => iso && new Date(iso).getTime() < cutoff;
+      let n = 0;
+      const ts = nowISO();
+      const tickets = cur.tickets.map((x) => (old(x.createdAt) && !x.piiPurgedAt && (x.customerName || x.serial) ? (n++, { ...x, customerName: x.customerName ? 'Purged' : '', serial: '', piiPurgedAt: ts, updatedAt: ts }) : x));
+      const assignments = cur.assignments.map((x) => (isTerminal(x.status) && old(x.completedAt || x.updatedAt) && !x.piiPurgedAt ? (n++, { ...x, customerName: 'Purged', phone: '', email: '', piiPurgedAt: ts, updatedAt: ts }) : x));
+      const queue = (cur.queue || []).map((x) => (old(x.joinedAt) && !x.piiPurgedAt && x.name !== 'Walk-up' ? (n++, { ...x, name: 'Purged', piiPurgedAt: ts, updatedAt: ts }) : x));
+      if (n) mutate((p) => act({ ...p, tickets: mergeById(p.tickets, tickets), assignments: mergeById(p.assignments, assignments), queue: mergeById(p.queue || [], queue) }, 'data.purge', 'Privacy purge', `${n} record${n === 1 ? '' : 's'} anonymised (older than ${days} days)`));
+      return n;
     },
     updateTicket: (id, patch) => mutate((p) => ({ ...p, tickets: p.tickets.map((t) => (t.id === id ? stamp(t, patch) : t)) })),
     logTicket: (id, extra = {}) => mutate((p) => {
@@ -159,6 +276,7 @@ function useGTSStore() {
         if (fromTicketId) next.tickets = next.tickets.map((t) => (t.id === fromTicketId ? stamp(t, { status: 'converted', convertedTo: created.id }) : t));
         return act(next, 'assignment.create', created.tag, `${created.customerName} · ${created.deviceDesc || serviceLabel(created.serviceType)}`);
       });
+      emitRef.current?.('assignment.create', created);
       return created;
     },
     updateAssignment: (id, patch, activity) => mutate((p) => {
@@ -276,19 +394,19 @@ function useGTSStore() {
     // ── Data management ─────────────────────────────────────────────────
     loadDemo: () => mutate((p) => {
       const d = buildDemoData();
-      return act({ ...p, tickets: [...d.tickets, ...p.tickets], assignments: [...d.assignments, ...p.assignments], inventory: [...d.inventory, ...p.inventory], broadcasts: [...(d.broadcasts || []), ...(p.broadcasts || [])], activity: [...d.activity, ...p.activity].slice(0, ACTIVITY_CAP), settings: { ...p.settings, demoLoaded: true } }, 'data.demo', 'Demo data', 'Synthetic records loaded');
+      return act({ ...p, tickets: [...d.tickets, ...p.tickets], assignments: [...d.assignments, ...p.assignments], inventory: [...d.inventory, ...p.inventory], broadcasts: [...(d.broadcasts || []), ...(p.broadcasts || [])], queue: [...(d.queue || []), ...(p.queue || [])], activity: [...d.activity, ...p.activity].slice(0, ACTIVITY_CAP), settings: { ...p.settings, demoLoaded: true } }, 'data.demo', 'Demo data', 'Synthetic records loaded');
     }),
     // Demo / reset use tombstones (not hard deletes) so the removal also
     // reaches the other devices when team sync is on.
     clearDemo: () => mutate((p) => {
       const ts = nowISO();
       const gone = (x) => (x.demo && !x.deletedAt ? { ...x, deletedAt: ts, updatedAt: ts } : x);
-      return { ...p, tickets: p.tickets.map(gone), assignments: p.assignments.map(gone), inventory: p.inventory.map(gone), broadcasts: (p.broadcasts || []).map(gone), activity: p.activity.filter((x) => !x.demo), settings: { ...p.settings, demoLoaded: false } };
+      return { ...p, tickets: p.tickets.map(gone), assignments: p.assignments.map(gone), inventory: p.inventory.map(gone), broadcasts: (p.broadcasts || []).map(gone), queue: (p.queue || []).map(gone), activity: p.activity.filter((x) => !x.demo), settings: { ...p.settings, demoLoaded: false } };
     }),
     clearAll: () => mutate((p) => {
       const ts = nowISO();
       const gone = (x) => (x.deletedAt ? x : { ...x, deletedAt: ts, updatedAt: ts });
-      const next = { ...p, tickets: p.tickets.map(gone), assignments: p.assignments.map(gone), inventory: p.inventory.map(gone), broadcasts: (p.broadcasts || []).map(gone), activity: [], checklist: {}, settings: { ...p.settings, demoLoaded: false } };
+      const next = { ...p, tickets: p.tickets.map(gone), assignments: p.assignments.map(gone), inventory: p.inventory.map(gone), broadcasts: (p.broadcasts || []).map(gone), queue: (p.queue || []).map(gone), activity: [], checklist: {}, settings: { ...p.settings, demoLoaded: false } };
       return act(next, 'data.reset', 'Board reset', 'All records deleted');
     }),
     importState: (text) => {
@@ -301,7 +419,17 @@ function useGTSStore() {
     exportJSON: () => state && exportJSON(state),
   }), [mutate, state]);
 
-  return { state, api, now };
+  return { state, api, now, emitRef };
+}
+
+/** Flat, integration-friendly shape (no internal ids beyond the record id). */
+export function webhookPayload(event, r, s) {
+  const base = { event, store: s.management?.storeCode || null, station: s.settings.stationName || null, at: nowISO(), app: `gts-hub@${APP_VERSION}` };
+  if (event.startsWith('ticket')) {
+    return { ...base, ticket: { id: r.id, tag: r.tag, orderNumber: r.orderNumber || null, customer: r.customerName || null, serviceType: r.serviceType, serviceLabel: serviceLabel(r.serviceType), description: r.description || null, tech: techName(r.tech), createdAt: r.createdAt, serviceStartedAt: r.serviceStartedAt || null, serviceEndedAt: r.serviceEndedAt || null, serviceMinutes: r.serviceStartedAt ? Math.round(serviceMs(r) / 6000) / 10 : null, warrantyBrand: r.warrantyBrand || null } };
+  }
+  if (event.startsWith('assignment')) return { ...base, assignment: { id: r.id, tag: r.tag, customer: r.customerName, orderNumber: r.orderNumber || null, serviceType: r.serviceType, device: r.deviceDesc || null, tech: techName(r.tech), receivedAt: r.receivedAt } };
+  return { ...base, record: r };
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -494,7 +622,7 @@ function useConnections() {
 //  ROOT COMPONENT
 // ═══════════════════════════════════════════════════════════════════════════
 export default function GTSApp() {
-  const { state, api, now } = useGTSStore();
+  const { state, api, now, emitRef } = useGTSStore();
   const [booting, setBooting] = useState(true);
   const [leaving, setLeaving] = useState(false);
   const [tab, setTab] = useState('home');
@@ -554,6 +682,7 @@ export default function GTSApp() {
     if (ref.type === 'assignment') openAssignment(ref.id);
     else if (ref.type === 'ticket') openTicket(ref.id);
     else if (ref.type === 'inventory') openInventory(ref.id);
+    else if (ref.type === 'queue') { setTab('salesforce'); }
   }, [openAssignment, openTicket, openInventory]);
 
   const newAssignment = useCallback((prefill, fromTicketId) => setModal({ type: 'assignment', props: { prefill, fromTicketId } }), []);
@@ -576,6 +705,7 @@ export default function GTSApp() {
       if (byKey) { goTo(byKey.id, byKey.id === 'home' ? 'overview' : undefined); return; }
       if (k === 'n' || k === 'N') { e.preventDefault(); newAssignment(); return; }
       if (k === 't' || k === 'T') { e.preventDefault(); newTicket(); return; }
+      if (k === 'w' || k === 'W') { e.preventDefault(); goTo('salesforce'); setTimeout(() => window.dispatchEvent(new CustomEvent('gts:add-walkin')), 80); return; }
       if (k === '/') { e.preventDefault(); window.dispatchEvent(new CustomEvent('gts:focus-search')); return; }
       if (k === '?') { setModal({ type: 'shortcuts' }); return; }
       if (k === 'h' || k === 'H') { goTo('home', 'overview'); return; }
@@ -591,8 +721,10 @@ export default function GTSApp() {
     const alerts = buildAlerts(state, now);
     return {
       alerts: alerts.filter((a) => a.severity === 'critical').length,
-      openTickets: state.tickets.filter((t) => !t.deletedAt && t.status === 'open').length,
-      needsUnix: state.tickets.filter((t) => !t.deletedAt && t.orderNumber && !t.unixLoggedAt && t.status !== 'converted').length,
+      openTickets: state.tickets.filter((t) => !t.deletedAt && !t.archivedAt && t.status === 'open').length,
+      needsUnix: state.tickets.filter((t) => !t.deletedAt && !t.archivedAt && t.orderNumber && !t.unixLoggedAt && t.status !== 'converted').length,
+      inService: state.tickets.filter((t) => !t.deletedAt && (serviceState(t) === 'running' || serviceState(t) === 'paused')).length,
+      waiting: (state.queue || []).filter((q) => !q.deletedAt && q.status === 'waiting').length,
       activeAsg: state.assignments.filter((a) => !a.deletedAt && !isTerminal(a.status)).length,
       outItems: state.inventory.filter((i) => !i.deletedAt && i.status === 'checked_out').length,
       broadcasts: activeBroadcasts(state, now).length,
@@ -601,15 +733,50 @@ export default function GTSApp() {
 
   const goal = useMemo(() => (state ? goalInfo(state, now) : null), [state, now]);
   const isManager = !!state && (state.management?.pinHash ? !!state.settings.managerUnlocked : true);
+  const features = state?.management?.features || {};
+  const perms = state?.management?.perms || {};
+  // Techs get what Management allows; an unlocked manager can do everything.
+  const can = useCallback((perm) => isManager || perms[perm] !== false, [isManager, perms]);
+  const warrantyBrands = useMemo(() => (state ? allWarrantyBrands(state.management) : []), [state?.management]); // eslint-disable-line react-hooks/exhaustive-deps
+  const [warrantyPick, setWarrantyPick] = useState(null);
+  const openWarranty = useCallback((brandId) => { setWarrantyPick(brandId || null); setTab('warranty'); window.scrollTo({ top: 0, behavior: 'smooth' }); }, []);
+
+  // ── Management auto-lock after N idle minutes (System → Security) ──────
+  const lastInput = useRef(Date.now());
+  useEffect(() => {
+    const bump = () => { lastInput.current = Date.now(); };
+    window.addEventListener('pointerdown', bump); window.addEventListener('keydown', bump);
+    return () => { window.removeEventListener('pointerdown', bump); window.removeEventListener('keydown', bump); };
+  }, []);
+  const lockMins = Number(state?.management?.autoLockMinutes) || 0;
+  const unlocked = !!state?.settings.managerUnlocked && !!state?.management?.pinHash;
+  useEffect(() => {
+    if (!unlocked || !lockMins) return undefined;
+    const iv = setInterval(() => {
+      if (Date.now() - lastInput.current > lockMins * 60_000) { api.setSettings({ managerUnlocked: false }); toast('Management locked after inactivity', { tone: 'info' }); }
+    }, 20_000);
+    return () => clearInterval(iv);
+  }, [unlocked, lockMins, api, toast]);
+
+  // ── Privacy auto-purge (once a day per device, when Management sets N days) ─
+  const purgeDays = Number(state?.management?.purgeAfterDays) || 0;
+  useEffect(() => {
+    if (!state || !purgeDays) return;
+    const today = dayKey();
+    if (state.settings.lastPurgeDay === today) return;
+    api.setSettings({ lastPurgeDay: today });
+    const n = api.purgePII(purgeDays);
+    if (n) toast(`Privacy: ${n} old record${n === 1 ? '' : 's'} anonymised`, { tone: 'info' });
+  }, [!!state, purgeDays]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const ctx = useMemo(() => ({
-    state, api, now, toast, sfx, sync, connections, goal, isManager,
+    state, api, now, toast, sfx, sync, connections, goal, isManager, can, features, warrantyBrands, openWarranty, warrantyPick, setWarrantyPick, emitRef,
     tab, goTo, homeTab, setHomeTab, fwView, setFwView,
     openAssignment, openTicket, openInventory, openRef, newAssignment, newTicket, confirm, highlight, openUnixScan,
     openPalette: () => setPalette(true), openShortcuts: () => setModal({ type: 'shortcuts' }), openAbout: () => setModal({ type: 'about' }),
     openWhatsNew: () => setModal({ type: 'whatsnew' }), openTechPicker: () => setModal({ type: 'tech' }), openMore: () => setModal({ type: 'more' }),
     counts,
-  }), [state, api, now, toast, sfx, sync, connections, goal, isManager, tab, goTo, homeTab, fwView, openAssignment, openTicket, openInventory, openRef, newAssignment, newTicket, confirm, highlight, openUnixScan, counts]);
+  }), [state, api, now, toast, sfx, sync, connections, goal, isManager, can, features, warrantyBrands, openWarranty, warrantyPick, emitRef, tab, goTo, homeTab, fwView, openAssignment, openTicket, openInventory, openRef, newAssignment, newTicket, confirm, highlight, openUnixScan, counts]);
 
   // ── server / pre-hydration render ────────────────────────────────────
   if (!state || booting) return <BootSplash leaving={leaving} />;
@@ -636,6 +803,7 @@ export default function GTSApp() {
               {tab === 'catalog' && <CatalogTab />}
               {tab === 'station' && <StationTab />}
               {tab === 'firmware' && <FirmwareTab />}
+              {tab === 'warranty' && <WarrantyTab />}
               {tab === 'management' && <ManagementTab />}
             </div>
           </main>
@@ -698,12 +866,13 @@ function BootSplash({ leaving }) {
         <GTSMark size={84} />
         <div style={{ textAlign: 'center' }}>
           <div className="brand-name" style={{ fontSize: 18, letterSpacing: '0.06em' }}>GUEST TECHNICAL SERVICES</div>
-          <div className="brand-sub" style={{ marginTop: 6 }}>GTS HUB · <span className="boot-v3">V3</span> · BUILT FOR SPEED</div>
+          <div className="brand-sub" style={{ marginTop: 6 }}>GTS HUB · <span className="boot-v3">V4</span> · BUILT FOR THE COUNTER</div>
         </div>
         <div className="boot-bar"><i /></div>
         <div className="boot-lines">
           <span>▸ loading the shared board</span>
           <span>▸ counting today’s customers</span>
+          <span>▸ starting service clocks</span>
           <span>▸ arming alerts + live channel</span>
           <span>● systems online</span>
         </div>
@@ -724,22 +893,22 @@ function Clock({ compact }) {
 }
 
 function Rail({ tech }) {
-  const { state, api, tab, goTo, counts, sync, isManager, openTechPicker, openAbout, fwView } = useStore();
+  const { state, api, tab, goTo, counts, sync, isManager, openTechPicker, openAbout, fwView, features } = useStore();
   const collapsed = !!state.settings.railCollapsed;
   const [fwOpen, setFwOpen] = useState(false);
   const fwExpanded = tab === 'firmware' || fwOpen;
-  const badge = (id) => (id === 'home' && counts.alerts) || (id === 'salesforce' && counts.openTickets) || (id === 'assignments' && counts.activeAsg) || (id === 'station' && counts.outItems) || (id === 'management' && counts.broadcasts) || 0;
+  const badge = (id) => (id === 'home' && counts.alerts) || (id === 'salesforce' && (counts.inService || counts.openTickets)) || (id === 'assignments' && counts.activeAsg) || (id === 'station' && counts.outItems) || (id === 'management' && counts.broadcasts) || 0;
   return (
     <aside className="rail" aria-label="Navigation">
-      <button className="rail-brand" onClick={() => goTo('home', 'overview')} title="GTS Hub V3 — Home">
+      <button className="rail-brand" onClick={() => goTo('home', 'overview')} title="GTS Hub V4 — Home">
         <GTSMark size={40} />
         <span className="rail-brand-text">
           <span className="brand-name">GTS HUB</span>
-          <span className="brand-sub">V3 · B&amp;H GUEST TECH</span>
+          <span className="brand-sub">V4 · B&amp;H GUEST TECH</span>
         </span>
       </button>
       <nav className="rail-nav">
-        {TABS.map((t) => {
+        {TABS.filter((t) => t.id !== 'warranty' || features.warranty !== false).map((t) => {
           const n = badge(t.id);
           const locked = t.manager && !isManager;
           return (
@@ -807,6 +976,21 @@ function GoalRing({ size = 44, compact }) {
   );
 }
 
+/** Customers this clock hour — the managers' "how many per hour" number, live. */
+function HourPulse() {
+  const { goal, goTo, counts } = useStore();
+  if (!goal) return null;
+  const h = new Date().getHours();
+  return (
+    <button className="hourpulse hidden-mobile" onClick={() => goTo('stats')} title={`${goal.thisHour} customer${goal.thisHour === 1 ? '' : 's'} since ${h % 12 || 12}:00 · ${goal.lastHour} the hour before${goal.perHourToday != null ? ` · ${goal.perHourToday.toFixed(1)}/hr today` : ''}`}>
+      <span className="hourpulse-dot" />
+      <span className="hourpulse-text"><b>{goal.thisHour}</b><span>THIS HOUR</span></span>
+      {goal.perHourToday != null && <span className="hourpulse-text is-sub"><b>{goal.perHourToday.toFixed(1)}</b><span>/HR TODAY</span></span>}
+      {counts.inService > 0 && <span className="hourpulse-text is-live"><b>{counts.inService}</b><span>IN SERVICE</span></span>}
+    </button>
+  );
+}
+
 function Strip({ tech }) {
   const { tab, goTo, openPalette, newTicket, counts, sync, openTechPicker, openMore } = useStore();
   const t = TABS.find((x) => x.id === tab) || TABS[0];
@@ -821,6 +1005,7 @@ function Strip({ tech }) {
         </div>
         <div className="strip-center">
           <GoalRing />
+          <HourPulse />
           {others.length > 0 && (
             <span className="strip-presence hidden-mobile" title={`${others.map((o) => techName(o.tech)).join(', ')} online`}>
               {others.slice(0, 4).map((o, i) => <Avatar key={o.tech || i} tech={o.tech} size="sm" />)}
@@ -908,7 +1093,7 @@ function SyncDot({ sync, onClick, rail }) {
 
 function MobileNav() {
   const { tab, goTo, counts, openMore } = useStore();
-  const badge = (id) => (id === 'home' && counts.alerts) || (id === 'salesforce' && counts.openTickets) || (id === 'assignments' && counts.activeAsg) || 0;
+  const badge = (id) => (id === 'home' && counts.alerts) || (id === 'salesforce' && (counts.inService || counts.openTickets)) || (id === 'assignments' && counts.activeAsg) || 0;
   const items = TABS.filter((t) => MOBILE_TABS.includes(t.id));
   const moreActive = !MOBILE_TABS.includes(tab);
   return (
@@ -986,20 +1171,20 @@ function TechPickerModal({ onClose, first }) {
 // ═══════════════════════════════════════════════════════════════════════════
 //  WHAT'S NEW (V3) + MOBILE "MORE" SHEET
 // ═══════════════════════════════════════════════════════════════════════════
-const V3_HIGHLIGHTS = [
-  ['zap', 'Quick Log with a stopwatch', 'Every ticket shows how fast it was logged. Average is single-digit seconds — the number directors care about.'],
-  ['activity', 'Stats — every number on one page', 'Order # vs no order #, per-tech, per-type, busiest hours, hold times, goal history. All hoverable.'],
-  ['shield', 'Management tab', 'Add or remove techs, post alerts that appear on every screen, set the daily goal, connect Salesforce and UNIX.'],
-  ['hash', 'UNIX scan bridge', 'Push to UNIX shows the order number as a barcode. Scan it at the WYSE terminal — no retyping, no firewall problem.'],
-  ['cloud', 'Salesforce connector', 'When the Connected App is set up, Push to Salesforce creates the real Case and stores its number here.'],
-  ['grid', 'New command-center layout', 'Sidebar rail, live goal ring, presence, team alerts. Same colors, same neon — more room to work.'],
+const V4_HIGHLIGHTS = [
+  ['sparkles', 'A Quick Log customers can watch', 'A live 3D stage sits next to the form: every keystroke streams into it, the order number lights up digit by digit, and saving fires a burst. Hit Customer display for full screen.'],
+  ['timer', 'Service clock on every ticket', 'From the first keystroke to Done — pause, resume, edit the times. Stats shows average, median and 90th-percentile service time by type and by tech.'],
+  ['activity', 'Customers per hour', 'Live “this hour” count in the top strip, today’s hour-by-hour chart, average per open hour using real store hours.'],
+  ['shield-check', 'Warranty helper', 'Pick a brand → official warranty / repair page, a QR code the customer scans, and what they need ready.'],
+  ['users', 'Walk-in queue', 'Add people as they arrive, see how long they’ve waited, tap Serve and the Quick Log fills itself in.'],
+  ['shield', 'System settings for IT', 'Store hours, service targets, ticket rules, permissions, auto-lock, privacy purge, webhooks, health endpoint, config export and a technical handoff doc.'],
 ];
 function WhatsNewModal({ onClose, first }) {
   return (
-    <Modal title="GTS Hub V3" sub="Built for speed. Built to be shown to the directors." onClose={onClose} icon="sparkles" size="lg"
-      footer={<><span className="faint" style={{ fontSize: 12 }}>Keyboard: 1–7 switch tabs · T quick log · N check-in · [ sidebar</span><Btn variant="primary" icon="arrow-right" onClick={onClose} autoFocus>{first ? 'Let’s go' : 'Close'}</Btn></>}>
+    <Modal title="GTS Hub V4" sub="More alive at the counter. Ready for the software department." onClose={onClose} icon="sparkles" size="lg"
+      footer={<><span className="faint" style={{ fontSize: 12 }}>Keyboard: 1–9 tabs · T quick log · W walk-in · N check-in · [ sidebar</span><Btn variant="primary" icon="arrow-right" onClick={onClose} autoFocus>{first ? 'Let’s go' : 'Close'}</Btn></>}>
       <div className="whatsnew">
-        {V3_HIGHLIGHTS.map(([icon, title, desc], i) => (
+        {V4_HIGHLIGHTS.map(([icon, title, desc], i) => (
           <div key={title} className="wn-item fade-up" style={{ '--i': i }}>
             <span className="wn-icon"><Icon name={icon} /></span>
             <div><div className="wn-title">{title}</div><div className="wn-desc">{desc}</div></div>
@@ -1016,7 +1201,7 @@ function MoreSheet({ onClose }) {
     ...TABS.filter((t) => !MOBILE_TABS.includes(t.id)).map((t) => ({ icon: t.icon, label: t.label, hint: t.hint, run: () => goTo(t.id), badge: t.id === 'management' ? counts.broadcasts : 0, lock: t.manager && !isManager })),
     { icon: 'settings', label: 'Settings', hint: 'Tech, sync, theme, backups', run: () => goTo('home', 'settings') },
     { icon: 'activity', label: 'Activity', hint: 'Who did what', run: () => goTo('home', 'activity') },
-    { icon: 'sparkles', label: 'What’s new in V3', hint: 'Release notes', run: openWhatsNew },
+    { icon: 'sparkles', label: 'What’s new in V4', hint: 'Release notes', run: openWhatsNew },
     { icon: 'keyboard', label: 'Keyboard shortcuts', hint: '', run: openShortcuts },
     { icon: 'info', label: 'About', hint: `GTS Hub v${APP_VERSION}`, run: openAbout },
   ];
@@ -1042,8 +1227,10 @@ function ShortcutsModal({ onClose }) {
     ['⌘ K', 'Command palette — search tickets, assignments, inventory, actions'],
     ['N', 'New overnight assignment (intake)'],
     ['T', 'Quick log a ticket'],
+    ['W', 'Add a walk-in to the queue'],
     ['/', 'Focus the search box on the current tab'],
-    ['1 – 7', 'Home · Quick Log · Assignments · Stats · Catalog · Station · Management'],
+    ['1 – 9', 'Home · Quick Log · Assignments · Stats · Catalog · Station · Management · Firmware · Warranty'],
+    ['⌘ ↵', 'Save the Quick Log'],
     ['[', 'Collapse / expand the sidebar'],
     ['H', 'Home'],
     ['Esc', 'Close any panel'],
@@ -1068,7 +1255,7 @@ function AboutModal({ onClose }) {
   const n = { t: state.tickets.filter((x) => !x.deletedAt).length, a: state.assignments.filter((x) => !x.deletedAt).length, i: state.inventory.filter((x) => !x.deletedAt).length };
   const storage = sync.status === 'idle' ? `Shared team board (${sync.live ? 'live' : 'polling'}, rev ${sync.rev}) · cached in this browser` : 'This browser';
   return (
-    <Modal title="GTS Hub V3" sub={`Version ${APP_VERSION} · Guest Technical Services command center`} onClose={onClose} size="sm" icon="sparkles">
+    <Modal title="GTS Hub V4" sub={`Version ${APP_VERSION} · Guest Technical Services command center`} onClose={onClose} size="sm" icon="sparkles">
       <div className="stack" style={{ gap: 12 }}>
         <div className="row" style={{ gap: 14 }}><GTSMark size={56} /><p className="muted" style={{ lineHeight: 1.6 }}>Quick Log with a stopwatch, Salesforce + UNIX push, live team board, overnight assignments with hold timers and auto-criticality, stats, management alerts and a daily goal — built for the B&amp;H GTS counter.</p></div>
         <dl className="dl">
@@ -1085,7 +1272,7 @@ function AboutModal({ onClose }) {
 //  COMMAND PALETTE (⌘K)
 // ═══════════════════════════════════════════════════════════════════════════
 function CommandPalette({ onClose }) {
-  const { state, api, goTo, openAssignment, openTicket, openInventory, newAssignment, newTicket, toast, sfx, openWhatsNew } = useStore();
+  const { state, api, goTo, openAssignment, openTicket, openInventory, newAssignment, newTicket, toast, sfx, openWhatsNew, warrantyBrands, openWarranty } = useStore();
   const [q, setQ] = useState('');
   const [idx, setIdx] = useState(0);
   const inputRef = useRef(null);
@@ -1100,7 +1287,10 @@ function CommandPalette({ onClose }) {
     if (matches(q, 'settings tech switch')) cmd('Open Settings', 'settings', () => goTo('home', 'settings'));
     if (matches(q, 'stats numbers report goal')) cmd('Open Stats', 'activity', () => goTo('stats'));
     if (matches(q, 'management alert broadcast team goal connections')) cmd('Open Management', 'shield', () => goTo('management'));
-    if (matches(q, 'whats new v3 release notes')) cmd('What’s new in V3', 'sparkles', () => openWhatsNew());
+    if (matches(q, 'whats new v4 release notes')) cmd('What’s new in V4', 'sparkles', () => openWhatsNew());
+    if (matches(q, 'walk in queue waiting add customer')) cmd('Add a walk-in to the queue', 'users', () => { goTo('salesforce'); setTimeout(() => window.dispatchEvent(new CustomEvent('gts:add-walkin')), 80); }, 'W');
+    if (matches(q, 'warranty repair manufacturer brand')) cmd('Open the warranty helper', 'shield-check', () => openWarranty());
+    if (q.trim().length > 1) for (const b of warrantyBrands) if (matches(q.replace(/warranty|repair/gi, ' ').trim() || '~', b.name, b.id)) out.push({ group: 'Warranty', label: `${b.name} warranty`, icon: 'shield-check', hint: 'open', sub: b.url, run: () => openWarranty(b.id) });
     if (matches(q, 'theme dark light toggle')) cmd(`Switch to ${state.settings.theme === 'dark' ? 'light' : 'dark'} theme`, state.settings.theme === 'dark' ? 'sun' : 'moon', () => api.setSettings({ theme: state.settings.theme === 'dark' ? 'light' : 'dark' }));
     for (const t of TECHS) if (matches(q, `sign in as ${t.name} tech switch`)) cmd(`Sign in as ${t.name}`, 'user', () => { api.setTech(t.id); toast(`Signed in as ${t.name}`, { tone: 'success' }); });
     if (matches(q, 'export backup json download')) cmd('Export backup (JSON)', 'download', () => downloadText(`gts-hub-backup-${dayKey()}.json`, api.exportJSON(), 'application/json'));
@@ -1124,7 +1314,7 @@ function CommandPalette({ onClose }) {
       }
     }
     return out.slice(0, 40);
-  }, [q, state, api, goTo, openAssignment, openTicket, openInventory, newAssignment, newTicket, toast, openWhatsNew]);
+  }, [q, state, api, goTo, openAssignment, openTicket, openInventory, newAssignment, newTicket, toast, openWhatsNew, warrantyBrands, openWarranty]);
 
   useEffect(() => { setIdx(0); }, [q]);
 
