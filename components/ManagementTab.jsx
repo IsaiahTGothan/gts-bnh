@@ -14,10 +14,13 @@ import { dayKey, downloadText, fmtDateTime, relTime, toCSV } from '../lib/utils'
 import { activeBroadcasts, onlineOthers, useStore } from './GTSApp';
 import { Barcode } from './UnixScan';
 import { Avatar, Btn, Chip, EmptyState, Icon, Input, KPI, Panel, Ring, Segmented, Select, Textarea, Toggle } from './ui';
+import ManagementSystem from './ManagementSystem';
+import { fmtDur } from '../lib/service';
 
 export default function ManagementTab() {
   const { state, api, isManager } = useStore();
   const m = state.management || {};
+  const [section, setSection] = useState('overview');
   if (m.pinHash && !isManager) return <PinGate />;
   return (
     <>
@@ -25,13 +28,14 @@ export default function ManagementTab() {
         <div>
           <div className="eyebrow">Management · {techName(state.settings.currentTech) === 'Unassigned' ? 'signed out' : techName(state.settings.currentTech)}</div>
           <h1 className="page-title" style={{ marginTop: 6 }}>Run the counter, <span className="grad-text">not the paperwork.</span></h1>
-          <p className="page-sub">Add techs, post an alert every screen sees, set the daily goal, connect Salesforce and UNIX, pull the numbers.</p>
+          <p className="page-sub">{section === 'system' ? 'Store hours, service targets, ticket rules, permissions, privacy, warranty links, integrations and diagnostics — synced to every device.' : 'Add techs, post an alert every screen sees, set the daily goal, connect Salesforce and UNIX, pull the numbers.'}</p>
         </div>
         <div className="row wrap">
+          <Segmented value={section} onChange={setSection} options={[{ id: 'overview', label: 'Overview', icon: 'grid' }, { id: 'system', label: 'System', icon: 'server' }]} />
           {m.pinHash ? <Btn size="sm" icon="lock" onClick={() => api.setSettings({ managerUnlocked: false })}>Lock this device</Btn> : <Chip tone="amber" icon="alert-circle">No manager PIN yet — anyone can open this tab</Chip>}
         </div>
       </div>
-      <div className="stack" style={{ gap: 16 }}>
+      {section === 'system' ? <ManagementSystem /> : <div className="stack" style={{ gap: 16 }}>
         <Snapshot />
         <div className="grid cols-2">
           <TeamPanel />
@@ -43,7 +47,7 @@ export default function ManagementTab() {
         </div>
         <ConnectionsPanel />
         <ExportsPanel />
-      </div>
+      </div>}
     </>
   );
 }
@@ -86,7 +90,10 @@ function Snapshot() {
   const week = useMemo(() => computeStats(state, { days: 7, now }), [state, now]);
   const others = onlineOthers(sync);
   return (
-    <div className="grid cols-5 stats-kpis">
+    <div className="grid cols-4 stats-kpis">
+      <KPI label="Customers / open hour (7d)" value={week.perHour.perOpenHour ? week.perHour.perOpenHour.toFixed(1) : '—'} icon="clock" tone="violet" delta={<span>{goal?.thisHour ?? 0} this hour · {goal?.lastHour ?? 0} last hour</span>} onClick={() => goTo('stats')} />
+      <KPI label="Avg service time (7d)" value={week.service.samples ? fmtDur(week.service.avgMs) : '—'} icon="timer" tone="green" delta={<span>{week.service.samples ? `p90 ${fmtDur(week.service.p90Ms)} · ${Math.round(week.service.withinTargetPct * 100)}% ≤ ${week.service.target}m` : 'no finished services yet'}</span>} onClick={() => goTo('stats')} />
+      <KPI label="In service now" value={today.service.running} icon="activity" tone="accent" delta={<span>{week.queue.waitingNow} waiting in the queue</span>} onClick={() => goTo('salesforce')} />
       <KPI label="Customers today" value={today.totals.customers} icon="users" delta={<span>goal {goal?.perDay} · {goal?.pct >= 1 ? 'reached' : goal?.onPace ? 'on pace' : `${goal?.remaining} to go`}</span>} onClick={() => goTo('stats')} />
       <KPI label="Order # rate (7d)" value={fmtPct(week.rates.orderPct)} icon="hash" tone="green" delta={<span>{week.totals.withOrder} of {week.totals.tickets} tickets</span>} onClick={() => goTo('stats')} />
       <KPI label="Salesforce (7d)" value={fmtPct(week.rates.sfPct)} icon="cloud" delta={<span>{week.totals.pushed} pushed</span>} onClick={() => goTo('stats')} />
