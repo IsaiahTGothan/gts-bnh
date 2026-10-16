@@ -748,12 +748,12 @@ img, svg { display: block; max-width: 100%; }
 }
 .modal.is-sm { width: min(460px, 100%); }
 .modal.is-lg { width: min(880px, 100%); }
-.modal-head { padding: 18px 20px 12px; display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; border-bottom: 1px solid var(--line); }
+.modal-head { flex: none; padding: 18px 20px 12px; display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; border-bottom: 1px solid var(--line); }
 .modal-title { font-size: 18px; font-weight: 700; }
 .modal-sub { color: var(--text-2); font-size: 13px; margin-top: 3px; }
-.modal-body { padding: 16px 20px; overflow-y: auto; overflow-x: hidden; display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; }
+.modal-body { flex: 1 1 auto; min-height: 0; padding: 16px 20px; overflow-y: auto; overscroll-behavior: contain; overflow-x: hidden; display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; }
 .modal-body > * { min-width: 0; }
-.modal-foot { padding: 12px 20px 16px; border-top: 1px solid var(--line); display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.modal-foot { flex: none; padding: 12px 20px 16px; border-top: 1px solid var(--line); display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
 .modal-foot .row { flex-wrap: wrap; }
 
 .palette-wrap { position: fixed; inset: 0; z-index: 70; display: flex; justify-content: center; align-items: flex-start; padding: 12vh 16px 16px; }
@@ -827,7 +827,7 @@ img, svg { display: block; max-width: 100%; }
 .fade-up { animation: fadeUp 360ms var(--ease) both; animation-delay: calc(var(--i, 0) * 40ms); }
 .flash { animation: flash 900ms var(--ease); }
 .spin { animation: spin 900ms linear infinite; }
-.tabpane { animation: fadeUp 260ms var(--ease) both; }
+.tabpane { animation: fadeUp 260ms var(--ease) backwards; } /* backwards: no transform left behind once it has played */
 .gts-mark .scanline { animation: scan 2.6s var(--ease) infinite; }
 
 @media (prefers-reduced-motion: reduce) {
@@ -1710,3 +1710,6 @@ button.metric:hover { border-color: var(--c); transform: translateY(-1px); }
 .live-edit .input, .live-edit .select select { height: 34px; font-size: 13px; }
 .live-edit .textarea { min-height: 52px; font-size: 13px; }
 @media (max-width: 900px) { .serve.is-editing { grid-column: span 1; } .scan-hit-name { flex: 1 1 100%; } }
+
+/* While a modal or drawer is open, toasts move to the top so they never cover its Save / Done buttons. */
+body:has(.modal-wrap, .drawer) .toasts { top: 16px; bottom: auto; }
