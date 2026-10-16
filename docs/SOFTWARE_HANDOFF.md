@@ -11,6 +11,7 @@ A live version of this page, filled in with the current settings and deployment 
 | Area | Purpose |
 |---|---|
 | **Quick Log** | Logs every counter customer in seconds. The order number goes in first. The ticket is then pushed to Salesforce (as a real Case, through the connector) and to UNIX (through a barcode scan bridge). A **service clock** runs on every ticket, from start to Done. Customers watch a 3D stage while the tech types. There is also a walk-in queue, multi-select with bulk actions, and an archive. |
+| **Scan to start** | Camera (native BarcodeDetector or ZXing, lazy-loaded) or USB/Bluetooth scanner gun (keyboard wedge, detected by keystroke timing). Scan → pick type → ticket starts with its service clock; `source: 'scan'` on the ticket. |
 | **Assignments** | Overnight drop-offs: intake, pipeline, hold-time alerts, automatic criticality, work log, printed tags. |
 | **Stats** | Customers served, customers per hour and per open hour, service time (average, median, 90th percentile, % within target, by type and by tech), order-number rate, Salesforce and UNIX coverage, hold times, a heatmap, CSV exports and a printable end-of-day report. |
 | **Warranty** | 56 manufacturer brands. Each one has its official warranty and repair pages, a phone number, what the customer needs to bring, and a QR code the customer scans. |

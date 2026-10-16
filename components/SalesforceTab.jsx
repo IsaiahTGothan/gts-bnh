@@ -45,8 +45,10 @@ export default function SalesforceTab() {
 
   useEffect(() => {
     const h = () => searchRef.current?.focus();
+    const pf = (e) => { setStagePrefill(e.detail); window.scrollTo({ top: 0, behavior: 'smooth' }); };
     window.addEventListener('gts:focus-search', h);
-    return () => window.removeEventListener('gts:focus-search', h);
+    window.addEventListener('gts:prefill', pf);
+    return () => { window.removeEventListener('gts:focus-search', h); window.removeEventListener('gts:prefill', pf); };
   }, []);
 
   const everything = state.tickets.filter((t) => !t.deletedAt);
@@ -230,7 +232,7 @@ function Metric({ icon, value, label, hint, tone, onClick }) {
 //  THE STAGE — form card + live 3D scene + customer-facing HUD
 // ═══════════════════════════════════════════════════════════════════════════
 function QuickLogStage({ prefill, onPrefillUsed, onConvert, onUnix }) {
-  const { state, api, toast, sfx, features, warrantyBrands } = useStore();
+  const { state, api, toast, sfx, features, warrantyBrands, openScanner } = useStore();
   const m = state.management || {};
   const effects = state.settings.effects || 'auto';
   const sceneOn = features.scene3d !== false && effects !== 'off';
@@ -261,6 +263,15 @@ function QuickLogStage({ prefill, onPrefillUsed, onConvert, onUnix }) {
     sceneApi.current?.pulse(orderRef.current);
     onPrefillUsed?.();
   }, [prefill]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // scanner gun fired into the order field → its digits are a scan, not typing
+  useEffect(() => {
+    const strip = (e) => { const code = e.detail?.code || ''; draft.load({ orderNumber: '' }); if (code) setStartedAt(null); };
+    const started = (e) => { const t = e.detail || {}; sceneApi.current?.setProgress(10); sceneApi.current?.burst(); setLast({ tag: t.tag, secs: t.secs ? Math.round(t.secs * 10) / 10 : null, id: t.id, order: t.order, name: t.name, at: Date.now(), scanned: true }); setTimeout(() => sceneApi.current?.setProgress(0), 1600); };
+    window.addEventListener('gts:scan-into-order', strip);
+    window.addEventListener('gts:ticket-started', started);
+    return () => { window.removeEventListener('gts:scan-into-order', strip); window.removeEventListener('gts:ticket-started', started); };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // the scene follows the form
   const brand = d.serviceType === 'warranty' ? brandById(warrantyBrands, d.warrantyBrand) : null;
@@ -326,13 +337,14 @@ function QuickLogStage({ prefill, onPrefillUsed, onConvert, onUnix }) {
             {startedAt && <Stopwatch startedAt={startedAt} />}
             {last && !startedAt && <Chip size="sm" tone="green" icon="check">{last.tag}{last.secs ? ` · ${last.secs}s` : ''}</Chip>}
             {last?.order && !startedAt && <Btn size="sm" variant="ghost" icon="hash" onClick={() => onUnix({ id: last.id })}>UNIX</Btn>}
+            {features.scanner !== false && <Btn size="sm" variant="outline-accent" icon="scan" className="scan-btn" onClick={() => openScanner()} title="Scan a barcode — camera or scanner gun (S)">Scan</Btn>}
             {features.customerDisplay !== false && <Btn size="sm" variant="ghost" icon={display ? 'minimize' : 'maximize'} onClick={toggleDisplay} title="Customer display — full screen stage">{display ? 'Exit' : ''}</Btn>}
             <Btn size="sm" variant="ghost" icon={collapsed ? 'chevron-right' : 'chevron-down'} onClick={() => setCollapsed((v) => !v)} title={collapsed ? 'Show the form' : 'Hide the form'} />
           </div>
         </header>
         {!collapsed && (
           <div onKeyDown={onKey} onInput={pulseFrom} onFocus={focusFrom} onBlur={blurFrom} onClickCapture={clickFrom}>
-            <TicketFields draft={draft} orderRef={orderRef} autoFocus={!touch} />
+            <TicketFields draft={draft} orderRef={orderRef} autoFocus={!touch} onScan={features.scanner !== false ? () => openScanner() : undefined} />
             <div className="ql-actions">
               {typed && <Btn variant="ghost" size="sm" icon="x" onClick={clear}>Clear</Btn>}
               {draft.isBlank && typed && !d.serviceType && !d.description && <Chip size="sm" tone="amber" icon="info">Blank ticket — describe the service</Chip>}
@@ -369,7 +381,7 @@ function StageHUD({ coreRef, d, digits, brand, startedAt, last, live, order }) {
   const name = d.customerName.trim() ? (m.maskNamesOnDisplay !== false ? maskName(d.customerName) : d.customerName.trim()) : '';
   let status = 'Ready for the next customer';
   let tone = '';
-  if (justSaved) { status = `Logged ${last.tag}${last.secs ? ` in ${last.secs}s` : ''}`; tone = 'is-ok'; }
+  if (justSaved) { status = last.scanned ? `Scanned · ${last.tag} started` : `Logged ${last.tag}${last.secs ? ` in ${last.secs}s` : ''}`; tone = 'is-ok'; }
   else if (digits > 0 && digits < 6) status = 'Reading order number…';
   else if (digits >= 6 && order === 'ok') { status = 'Order number recognised'; tone = 'is-ok'; }
   else if (digits >= 6) status = 'Checking order number…';
@@ -404,6 +416,12 @@ function StageHUD({ coreRef, d, digits, brand, startedAt, last, live, order }) {
 // ═══════════════════════════════════════════════════════════════════════════
 function NowServing({ onEdit }) {
   const { state } = useStore();
+  const [editing, setEditing] = useState(null);
+  useEffect(() => {
+    const h = (e) => { if (e.detail?.id) { setEditing(e.detail.id); setTimeout(() => document.getElementById(`serve-${e.detail.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 120); } };
+    window.addEventListener('gts:live-edit', h); window.addEventListener('gts:ticket-started', h);
+    return () => { window.removeEventListener('gts:live-edit', h); window.removeEventListener('gts:ticket-started', h); };
+  }, []);
   const active = state.tickets.filter((t) => !t.deletedAt && (serviceState(t) === 'running' || serviceState(t) === 'paused')).sort((a, b) => new Date(a.serviceStartedAt) - new Date(b.serviceStartedAt));
   return (
     <section className="lane">
@@ -415,14 +433,14 @@ function NowServing({ onEdit }) {
         <div className="lane-empty"><Icon name="timer" size={18} /> Nobody in service. Log a customer and their clock starts here — hit <b>Done</b> when they walk away.</div>
       ) : (
         <div className="serving">
-          {active.map((t) => <ServingTile key={t.id} t={t} onEdit={() => onEdit(t)} />)}
+          {active.map((t) => <ServingTile key={t.id} t={t} onEdit={() => onEdit(t)} editing={editing === t.id} onToggle={() => setEditing((x) => (x === t.id ? null : t.id))} />)}
         </div>
       )}
     </section>
   );
 }
 
-function ServingTile({ t, onEdit }) {
+function ServingTile({ t, onEdit, editing, onToggle }) {
   const { api, state, sfx, toast } = useStore();
   const st = serviceState(t);
   const now = useTick(1000, st === 'running');
@@ -432,9 +450,9 @@ function ServingTile({ t, onEdit }) {
   const svc = SERVICE_BY_ID[t.serviceType];
   const done = () => { api.serviceAction(t.id, 'finish'); sfx('success'); toast(`${t.tag} done in ${fmtDur(ms)}`, { tone: 'success', action: { label: 'Undo', onClick: () => api.serviceAction(t.id, 'resume') } }); };
   return (
-    <div className={cx('serve', `is-${st}`, over)} style={{ '--c': svc?.color || 'var(--accent)' }}>
+    <div id={`serve-${t.id}`} className={cx('serve', `is-${st}`, over, editing && 'is-editing')} style={{ '--c': svc?.color || 'var(--accent)' }}>
       <div className="serve-top">
-        <span className="tag">{t.tag}</span>
+        <span className="tag">{t.tag}</span>{t.source === 'scan' && <Icon name="scan" size={12} style={{ color: 'var(--text-3)' }} title="Started from a scan" />}
         <span className="truncate serve-who">{t.customerName || (t.orderNumber ? `#${t.orderNumber}` : 'Walk-up')}</span>
         <Avatar tech={t.tech} size="sm" />
       </div>
@@ -444,7 +462,40 @@ function ServingTile({ t, onEdit }) {
       <div className="serve-actions">
         {st === 'running' ? <Btn size="sm" variant="ghost" icon="pause" onClick={() => api.serviceAction(t.id, 'pause')} title="Pause the clock">Pause</Btn> : <Btn size="sm" variant="ghost" icon="play" onClick={() => api.serviceAction(t.id, 'resume')}>Resume</Btn>}
         <Btn size="sm" variant="success" icon="check" onClick={done}>Done</Btn>
-        <Btn size="xs" variant="ghost" icon="edit" onClick={onEdit} title="Edit ticket / times" aria-label="Edit" />
+        <Btn size="xs" variant={editing ? 'outline-accent' : 'ghost'} icon="edit" onClick={onToggle} title="Edit details while the clock runs" aria-label="Edit details" aria-expanded={editing} />
+      </div>
+      {editing && <LiveEditor t={t} onMore={onEdit} />}
+    </div>
+  );
+}
+
+/** Edit a ticket while its clock keeps running — changes save as you type. */
+function LiveEditor({ t, onMore }) {
+  const { api, warrantyBrands } = useStore();
+  const [d, setD] = useState(() => ({ orderNumber: t.orderNumber || '', customerName: t.customerName || '', serviceType: t.serviceType || '', description: t.description || '', warrantyBrand: t.warrantyBrand || '' }));
+  const first = useRef(null);
+  useEffect(() => { first.current?.focus(); }, []);
+  // debounced autosave — the service clock is untouched
+  useEffect(() => {
+    const patch = {};
+    for (const k of Object.keys(d)) { const cur = t[k] || ''; if ((d[k] || '') !== cur) patch[k] = d[k] || (k === 'serviceType' || k === 'warrantyBrand' ? null : ''); }
+    if (!Object.keys(patch).length) return undefined;
+    const timer = setTimeout(() => api.updateTicket(t.id, { ...patch, ...(patch.serviceType !== undefined && patch.serviceType !== 'warranty' ? { warrantyBrand: null } : {}) }), 450);
+    return () => clearTimeout(timer);
+  }, [d]); // eslint-disable-line react-hooks/exhaustive-deps
+  const set = (k) => (e) => setD((x) => ({ ...x, [k]: e.target.value }));
+  return (
+    <div className="live-edit fade-up">
+      <div className="live-edit-grid">
+        <Input ref={first} className="mono" placeholder="Order #" value={d.orderNumber} onChange={set('orderNumber')} aria-label="Order number" />
+        <Input placeholder="Customer name" value={d.customerName} onChange={set('customerName')} aria-label="Customer name" />
+        <Select value={d.serviceType} onChange={set('serviceType')} aria-label="Service type"><option value="">Type…</option>{SERVICE_TYPES.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}</Select>
+        {d.serviceType === 'warranty' && <Select value={d.warrantyBrand} onChange={set('warrantyBrand')} aria-label="Warranty brand"><option value="">Brand…</option>{warrantyBrands.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}</Select>}
+      </div>
+      <textarea className="textarea" rows={2} placeholder="What are we doing? (saves as you type)" value={d.description} onChange={set('description')} aria-label="Description" />
+      <div className="row" style={{ gap: 6, justifyContent: 'space-between' }}>
+        <span className="faint" style={{ fontSize: 11 }}><span className="svc-live" style={{ display: 'inline-block', marginRight: 6 }} />Saves automatically · clock keeps running</span>
+        <Btn size="xs" variant="ghost" icon="timer" onClick={onMore}>Times & more</Btn>
       </div>
     </div>
   );

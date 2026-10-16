@@ -31,6 +31,8 @@ import StationTab from './StationTab';
 import FirmwareTab from './FirmwareTab';
 import { Decode, MatrixRain } from './matrix';
 import WarrantyTab from './WarrantyTab';
+import ScanModal from './ScanModal';
+import { createWedge } from '../lib/scan';
 import { AssignmentDrawer, AssignmentForm, TicketForm } from './assignment-views';
 
 // ─── Context ───────────────────────────────────────────────────────────────
@@ -135,6 +137,7 @@ function useGTSStore() {
         // V4 warranty requests
         warrantyBrand: data.serviceType === 'warranty' || data.warrantyBrand ? (data.warrantyBrand || null) : null,
         serial: (data.serial || '').trim(), queueId: data.queueId || null,
+        source: data.source || null,   // 'scan' when it came from the barcode scanner
       };
       mutate((p) => {
         let next = { ...p, tickets: [created, ...p.tickets] };
@@ -691,21 +694,63 @@ export default function GTSApp() {
   const confirm = useCallback((props) => setModal({ type: 'confirm', props }), []);
   const closeModal = useCallback(() => setModal(null), []);
   const openUnixScan = useCallback((ticketId) => setModal({ type: 'unix', props: { ticketId } }), []);
+  const openScanner = useCallback((code, format) => setModal({ type: 'scan', props: { code: code || null, format: format || '' } }), []);
+
+  // ── scanner gun (keyboard wedge): a fast burst + Enter anywhere = a scan ──
+  //    Typed into the Quick Log order field or into nothing → open the scan
+  //    result (pick the type → ticket starts). Typed into any other field
+  //    (search boxes…) → left alone, it belongs to that field.
+  const wedgeRef = useRef(null);
+  const overlayOpen = useRef(false);
+  overlayOpen.current = !!(modal || drawerId || palette);
+  const scannerOn = state?.management?.features?.scanner !== false;
+  useEffect(() => {
+    if (!scannerOn) { wedgeRef.current = null; return undefined; }
+    const wedge = createWedge({
+      onScan: (code, el) => {
+        if (el?.classList?.contains('order-input')) window.dispatchEvent(new CustomEvent('gts:scan-into-order', { detail: { code } }));
+        setTab('salesforce');
+        openScanner(code);
+      },
+    });
+    wedgeRef.current = wedge;
+    const h = (e) => {
+      if (overlayOpen.current) return;
+      const t = e.target; const tag = (t?.tagName || '').toLowerCase();
+      const field = tag === 'input' || tag === 'textarea' || tag === 'select' || t?.isContentEditable;
+      if (field && !t.classList?.contains('order-input')) return;
+      wedge.handle(e);
+    };
+    window.addEventListener('keydown', h, true);
+    return () => window.removeEventListener('keydown', h, true);
+  }, [scannerOn, openScanner]);
+  const shortcutTimer = useRef(null);
 
   // ── keyboard shortcuts ───────────────────────────────────────────────
   useEffect(() => {
     const onKey = (e) => {
+      if (e.defaultPrevented) return; // already handled (e.g. 1–0 picking a type in the scan window)
       const meta = e.metaKey || e.ctrlKey;
       if (meta && e.key.toLowerCase() === 'k') { e.preventDefault(); setPalette((p) => !p); return; }
       const tag = (e.target?.tagName || '').toLowerCase();
       const typing = tag === 'input' || tag === 'textarea' || tag === 'select' || e.target?.isContentEditable;
       if (typing || meta || e.altKey) return;
       if (modal || drawerId || palette) return;
+      // Single-key shortcuts wait 45 ms: a scanner gun types a whole number in that time,
+      // so "1095…" from the gun must not flip through tabs 1, 0, 9…
+      clearTimeout(shortcutTimer.current);
+      if (wedgeRef.current?.bursting) return;
+      if (e.key.length === 1) e.preventDefault();
+      const ev = { key: e.key, preventDefault: () => {} };
+      shortcutTimer.current = setTimeout(() => { if (!wedgeRef.current?.bursting) runShortcut(ev); }, 45);
+    };
+    const runShortcut = (e) => {
       const k = e.key;
       const byKey = TABS.find((t) => t.key === k);
       if (byKey) { e.preventDefault(); goTo(byKey.id, byKey.id === 'home' ? 'overview' : undefined); return; }
       if (k === 'n' || k === 'N') { e.preventDefault(); newAssignment(); return; }
       if (k === 't' || k === 'T') { e.preventDefault(); newTicket(); return; }
+      if (k === 's' || k === 'S') { setTab('salesforce'); openScanner(); return; }
       if (k === 'w' || k === 'W') { e.preventDefault(); goTo('salesforce'); setTimeout(() => window.dispatchEvent(new CustomEvent('gts:add-walkin')), 80); return; }
       if (k === '/') { e.preventDefault(); window.dispatchEvent(new CustomEvent('gts:focus-search')); return; }
       if (k === '?') { setModal({ type: 'shortcuts' }); return; }
@@ -782,13 +827,14 @@ export default function GTSApp() {
   }, [!!state, purgeDays]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const ctx = useMemo(() => ({
+    openScanner,
     state, api, now, toast, sfx, sync, connections, goal, isManager, can, features, warrantyBrands, openWarranty, warrantyPick, setWarrantyPick, emitRef, fireHype,
     tab, goTo, homeTab, setHomeTab, fwView, setFwView,
     openAssignment, openTicket, openInventory, openRef, newAssignment, newTicket, confirm, highlight, openUnixScan,
     openPalette: () => setPalette(true), openShortcuts: () => setModal({ type: 'shortcuts' }), openAbout: () => setModal({ type: 'about' }),
     openWhatsNew: () => setModal({ type: 'whatsnew' }), openTechPicker: () => setModal({ type: 'tech' }), openMore: () => setModal({ type: 'more' }),
     counts,
-  }), [state, api, now, toast, sfx, sync, connections, goal, isManager, can, features, warrantyBrands, openWarranty, warrantyPick, emitRef, fireHype, tab, goTo, homeTab, fwView, openAssignment, openTicket, openInventory, openRef, newAssignment, newTicket, confirm, highlight, openUnixScan, counts]);
+  }), [openScanner, state, api, now, toast, sfx, sync, connections, goal, isManager, can, features, warrantyBrands, openWarranty, warrantyPick, emitRef, fireHype, tab, goTo, homeTab, fwView, openAssignment, openTicket, openInventory, openRef, newAssignment, newTicket, confirm, highlight, openUnixScan, counts]);
 
   // ── server / pre-hydration render ────────────────────────────────────
   if (!state || booting) return <BootSplash leaving={leaving} />;
@@ -852,6 +898,7 @@ export default function GTSApp() {
       {modal?.type === 'whatsnew' && <WhatsNewModal onClose={closeModal} />}
       {modal?.type === 'more' && <MoreSheet onClose={closeModal} />}
       {modal?.type === 'unix' && <UnixScanModal ticketId={modal.props?.ticketId} onClose={closeModal} />}
+      {modal?.type === 'scan' && <ScanModal key={modal.props?.code || 'scan'} initialCode={modal.props?.code} initialFormat={modal.props?.format} onClose={closeModal} />}
       {!state.settings.onboarded && !modal && !booting && <TechPickerModal onClose={() => api.setSettings({ onboarded: true })} first />}
       {showWhatsNew && <WhatsNewModal onClose={() => api.setSettings({ whatsNewSeen: APP_MAJOR })} first />}
 
@@ -1187,6 +1234,7 @@ function TechPickerModal({ onClose, first }) {
 //  WHAT'S NEW (V3) + MOBILE "MORE" SHEET
 // ═══════════════════════════════════════════════════════════════════════════
 const V4_HIGHLIGHTS = [
+  ['scan', 'Scan to start (4.1)', 'Hit Scan (or S) on the Mac to read a barcode with the camera; on the Windows PCs just pull the scanner trigger anywhere. Pick the type with 1–0 and the ticket starts with its clock running — edit it while it runs.'],
   ['sparkles', 'A Quick Log customers can watch', 'A live 3D stage sits next to the form: every keystroke streams into it, the order number lights up digit by digit, and saving fires a burst. Hit Customer display for full screen.'],
   ['timer', 'Service clock on every ticket', 'From the first keystroke to Done — pause, resume, edit the times. Stats shows average, median and 90th-percentile service time by type and by tech.'],
   ['activity', 'Customers per hour', 'Live “this hour” count in the top strip, today’s hour-by-hour chart, average per open hour using real store hours.'],
@@ -1243,6 +1291,8 @@ function ShortcutsModal({ onClose }) {
     ['N', 'New overnight assignment (intake)'],
     ['T', 'Quick log a ticket'],
     ['W', 'Add a walk-in to the queue'],
+    ['S', 'Scan a barcode (camera or scanner gun)'],
+    ['1 – 0', 'In the scan window: pick the service type'],
     ['/', 'Focus the search box on the current tab'],
     ['1 – 9', 'Home · Quick Log · Assignments · Stats · Catalog · Station · Management · Firmware · Warranty'],
     ['⌘ ↵', 'Save the Quick Log'],
@@ -1288,7 +1338,7 @@ function AboutModal({ onClose }) {
 //  COMMAND PALETTE (⌘K)
 // ═══════════════════════════════════════════════════════════════════════════
 function CommandPalette({ onClose }) {
-  const { state, api, goTo, openAssignment, openTicket, openInventory, newAssignment, newTicket, toast, sfx, openWhatsNew, warrantyBrands, openWarranty } = useStore();
+  const { state, api, goTo, openAssignment, openTicket, openInventory, newAssignment, newTicket, toast, sfx, openWhatsNew, warrantyBrands, openWarranty, openScanner } = useStore();
   const [q, setQ] = useState('');
   const [idx, setIdx] = useState(0);
   const inputRef = useRef(null);
@@ -1304,6 +1354,7 @@ function CommandPalette({ onClose }) {
     if (matches(q, 'stats numbers report goal')) cmd('Open Stats', 'activity', () => goTo('stats'));
     if (matches(q, 'management alert broadcast team goal connections')) cmd('Open Management', 'shield', () => goTo('management'));
     if (matches(q, 'whats new v4 release notes')) cmd('What’s new in V4', 'sparkles', () => openWhatsNew());
+    if (matches(q, 'scan barcode camera scanner gun order')) cmd('Scan a barcode', 'scan', () => { goTo('salesforce'); openScanner(); }, 'S');
     if (matches(q, 'walk in queue waiting add customer')) cmd('Add a walk-in to the queue', 'users', () => { goTo('salesforce'); setTimeout(() => window.dispatchEvent(new CustomEvent('gts:add-walkin')), 80); }, 'W');
     if (matches(q, 'warranty repair manufacturer brand')) cmd('Open the warranty helper', 'shield-check', () => openWarranty());
     if (q.trim().length > 1) for (const b of warrantyBrands) if (matches(q.replace(/warranty|repair/gi, ' ').trim() || '~', b.name, b.id)) out.push({ group: 'Warranty', label: `${b.name} warranty`, icon: 'shield-check', hint: 'open', sub: b.url, run: () => openWarranty(b.id) });
@@ -1332,7 +1383,7 @@ function CommandPalette({ onClose }) {
       }
     }
     return out.slice(0, 40);
-  }, [q, state, api, goTo, openAssignment, openTicket, openInventory, newAssignment, newTicket, toast, openWhatsNew, warrantyBrands, openWarranty]);
+  }, [q, state, api, goTo, openAssignment, openTicket, openInventory, newAssignment, newTicket, toast, openWhatsNew, warrantyBrands, openWarranty, openScanner]);
 
   useEffect(() => { setIdx(0); }, [q]);
 

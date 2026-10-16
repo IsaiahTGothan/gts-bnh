@@ -183,6 +183,7 @@ function FeaturesPanel() {
       </Setting>
       <Setting title="Customer display button" desc="Full-screen stage for a second, customer-facing monitor.">{flag('customerDisplay', 'Customer display')}</Setting>
       <Setting title="Walk-in queue" desc="Queue on Quick Log; wait times in Stats.">{flag('queue', 'Walk-in queue')}</Setting>
+      <Setting title="Barcode scanning" desc="Scan button (camera) and scanner-gun detection anywhere in the app.">{flag('scanner', 'Barcode scanning')}</Setting>
       <Setting title="Warranty helper" desc="Warranty tab, brand picker on warranty tickets.">{flag('warranty', 'Warranty helper')}</Setting>
       <Setting title="Celebrate the daily goal" desc="Confetti-style burst when the counter hits the goal.">{flag('celebrate', 'Celebrate goal')}</Setting>
     </Panel>

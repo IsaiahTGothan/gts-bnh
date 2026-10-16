@@ -52,7 +52,7 @@ export function useTicketDraft(prefill) {
 }
 
 /** Shared fields — used by the Quick Log stage, the T modal and the edit modal. */
-export function TicketFields({ draft, autoFocus, compactTypes, showClock = true, orderRef }) {
+export function TicketFields({ draft, autoFocus, compactTypes, showClock = true, orderRef, onScan }) {
   const { state, openTicket } = useStore();
   const { d, set, errors, isBlank, order, dupe } = draft;
   const m = state.management || {};
@@ -71,6 +71,7 @@ export function TicketFields({ draft, autoFocus, compactTypes, showClock = true,
           <Input ref={ref} className={cx('mono input-lg order-input', order === 'ok' && digitsTyped >= 6 && 'is-good', order === 'bad' && m.orderCheck !== 'off' && 'is-warn')} inputMode="numeric" autoComplete="off" placeholder="e.g. 1095847721" value={d.orderNumber}
             onChange={(e) => set('orderNumber', e.target.value.replace(/[^\d\w-]/g, ''))} onKeyDown={nextField} />
           <span className="order-count mono" aria-hidden="true">{order === 'ok' && digitsTyped >= 6 ? <Icon name="check" size={13} /> : digitsTyped ? `${digitsTyped}` : ''}</span>
+          {onScan && <button type="button" className="order-scan" onClick={onScan} title="Scan the barcode instead (S)" aria-label="Scan a barcode"><Icon name="scan" size={16} /></button>}
         </div>
         {dupe && <span className="field-hint is-warn"><Icon name="alert-triangle" size={11} /> Already logged as <button type="button" className="linkish" onClick={() => openTicket(dupe.id)}>{dupe.tag}</button> {relTime(dupe.createdAt)} — same customer?</span>}
       </Field>

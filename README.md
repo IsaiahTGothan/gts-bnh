@@ -20,6 +20,7 @@ Built with Next.js (App Router) + React, a hand-rolled design system (no UI libr
 
 ## What’s new in V4
 
+* **Scan to start (4.1)** — a **Scan** button in Quick Log (and `S` anywhere). It reads the barcode with the computer’s camera — the native `BarcodeDetector` where the browser has one (Chrome on macOS), ZXing everywhere else (Safari, Chrome on Windows). It also works with a USB / Bluetooth **scanner gun**: the app recognises the gun by how fast it types, so on a PC with a gun a trigger pull **anywhere in the app** opens the scan, with no clicking first, and the digits never trigger tab shortcuts. The number goes straight in (order numbers are pulled out of longer codes; UPC/EAN product codes go to the description). Pick the service type with a tap or **1–0**, or press Enter for no type, and the ticket starts with its service clock running. It opens in **Now serving** with a live editor (order #, name, type, brand, description — saves as you type; the clock keeps going). Auto mode uses the camera on computers that have one and the gun on computers that don’t; *Keep scanning* handles a stack in a row; duplicate-order warning included. Toggle: Management → System → Features → Barcode scanning.
 * **Quick Log stage (three.js)** — the Quick Log card now sits on a live 3D stage the customer can watch. A light-beam connects whichever field you are typing in to a glowing core; every keystroke streams particles down it, the 10-segment ring lights up digit by digit as the order number goes in, the colour follows the service type (or the warranty brand), and saving fires a shockwave. The right side is a customer-facing HUD: the order number assembling in big digit slots, a decoding status line (“Order number recognised”), the service, the brand and the customer’s name masked as “Devon C.”. **Customer display** (⤢) puts the whole stage full screen for a second monitor. three.js is lazy-loaded (only on Quick Log), pauses when hidden, respects reduced motion, and falls back to a 2D glow when WebGL is missing.
 * **Service clock — how long a ticket takes.** Every ticket gets a clock from the first keystroke (or a manual Start) to **Done**, with **Pause / Resume**, and Resume after Done for customers who come back. **Now serving** shows every running clock big, turning amber past the target and red past 2×. Full control: edit start, finish, paused minutes and the created-at time on any ticket (Management can lock that). Stats shows average, median, 90th percentile, % within target, a duration histogram, average by service type against its target, and average + total service time per tech. Forgotten clocks raise an alert.
 * **Customers per hour** — a live *this hour · per hour today · in service* pill in the top strip, today’s hour-by-hour chart, a “typical day” chart, customers per **open** hour (using real store hours), the record hour, plus a printable **end-of-day report**.
@@ -29,7 +30,7 @@ Built with Next.js (App Router) + React, a hand-rolled design system (no UI libr
 * **Management → System** — everything the software department asked for: store code + per-weekday store hours, service-clock default + targets (global and per type), ticket rules (required fields, order-number pattern with warn/block, duplicate window, description templates), feature switches, **security** (auto-lock after idle, per-permission tech controls), **privacy** (name masking on the customer display, anonymise after N days), **integrations** (HTTPS webhooks to Teams / Slack / Power Automate, `/api/health` for uptime monitoring), **diagnostics** you can paste into an IT ticket, **config export / import** between stores, an **audit log** CSV and a generated **technical handoff**. See [`docs/SOFTWARE_HANDOFF.md`](docs/SOFTWARE_HANDOFF.md).
 * **Matrix theme + RGB mode** — a third theme (green phosphor, digital rain, scanlines, mono headings) and digital rain on the stage in every theme. **RGB mode** (`R`, or the RGB pill in the strip) runs one rainbow wave across the hero buttons, the metric tiles and the stage, and cycles the 3D core through the spectrum; it switches itself on for a few seconds when the daily goal is hit (with confetti).
 * **Smoother everywhere** — Enter jumps to the next field, ⌘/Ctrl + Enter saves, Esc clears; order-number check mark + digit count; one-tap description templates; duplicate-order warning; touch devices don’t pop the keyboard on open; page titles decode in; columns and charts animate in; the T modal has the same fields as the stage.
-* Keyboard: `1–9` tabs · `T` quick log · `W` walk-in · `N` check-in · `R` RGB · `/` search · `⌘K` palette · `[` rail · `?` all shortcuts.
+* Keyboard: `1–9` tabs · `T` quick log · `S` scan · `W` walk-in · `N` check-in · `R` RGB · `/` search · `⌘K` palette · `[` rail · `?` all shortcuts.
 
 ---
 
@@ -196,7 +197,8 @@ app/
 components/
   GTSApp.jsx           store, persistence, sync loop + live channel, shell (rail, strip, alerts), overlays, shortcuts
   HomeTab.jsx          overview · activity · settings
-  SalesforceTab.jsx    Quick Log: 3D stage + HUD, Now serving, walk-in queue, cards/table, bulk bar
+  SalesforceTab.jsx    Quick Log: 3D stage + HUD, Now serving (+ live editor), walk-in queue, cards/table, bulk bar
+  ScanModal.jsx        scan to start: camera / scanner gun → pick type → ticket running
   QuickLogScene.jsx    three.js stage (lazy-loaded)
   matrix.jsx           digital rain + decode text
   WarrantyTab.jsx · warranty-ui.jsx   warranty helper (brand picker, card, QR)
@@ -210,7 +212,7 @@ components/
   ui.jsx               icons, logos, buttons, panels, forms, charts (HoverChart, Heatmap, Ring, SplitBar)
 lib/
   constants.js · utils.js · store.js (merge) · stats.js · service.js (clock + hours) · barcode.js · pin.js
-  warranty.js · warranty-data.js · webhook.js · handoff.js
+  warranty.js · warranty-data.js · webhook.js · handoff.js · scan.js (camera engine, scanner-gun detector, parser)
   sync.js (client) · sync-server.js (server) · realtime.js
   salesforce.js (client) · salesforce-server.js (server)
   print.js · sounds.js · catalog.js · zays-logo.js
