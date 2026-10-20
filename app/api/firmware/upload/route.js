@@ -1,5 +1,6 @@
 // ═══════════════════════════════════════════════════════════════════════════
-//  /api/firmware/upload — firmware files for team-added gear (Vercel Blob).
+//  /api/firmware/upload — firmware files for team-added gear and the promo-
+//  screen video (Vercel Blob).
 //
 //  The browser uploads straight to Blob storage (so big firmware zips never
 //  pass through a serverless function); this route only hands out the upload
@@ -52,7 +53,7 @@ export async function POST(req) {
         let key = '';
         try { key = JSON.parse(clientPayload || '{}').key || ''; } catch { /* ignore */ }
         if (!(await keyOk(key))) throw new Error('Team passcode required — connect this station in Settings → Team sync first.');
-        if (!/^firmware\//.test(pathname)) throw new Error('bad path');
+        if (!/^(firmware|promo)\//.test(pathname)) throw new Error('bad path'); // promo/ = the promo-screen video (Management → System)
         return { maximumSizeInBytes: MAX_BYTES, addRandomSuffix: true, tokenPayload: JSON.stringify({ at: new Date().toISOString() }) };
       },
       onUploadCompleted: async () => { /* the record is written by the client into the shared board */ },

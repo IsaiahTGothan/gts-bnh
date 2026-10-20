@@ -35,7 +35,9 @@ export function useTicketDraft(prefill) {
   const isBlank = !d.orderNumber.trim() && !d.customerName.trim();
   const order = checkOrder(d.orderNumber, m);
   const problems = {};
-  if (isBlank && !d.serviceType && !d.description.trim() && !d.warrantyBrand) problems.description = 'Blank tickets need at least a service type or a short description of the service.';
+  const needDesc = m.requireDescription !== false;
+  if (needDesc && d.description.trim().length < 3) problems.description = 'Say what was done or requested — e.g. “Firmware update” (required).';
+  else if (isBlank && !d.serviceType && !d.description.trim() && !d.warrantyBrand) problems.description = 'Blank tickets need at least a service type or a short description of the service.';
   if (m.requireServiceType && !d.serviceType) problems.serviceType = 'Pick a service type (required by Management).';
   if (m.requireOrderNumber && !d.orderNumber.trim()) problems.orderNumber = 'An order number is required (Management → System → Ticket rules).';
   if (order === 'bad' && m.orderCheck === 'block') problems.orderNumber = 'That doesn’t look like a B&H order number.';
@@ -48,13 +50,13 @@ export function useTicketDraft(prefill) {
     return state.tickets.find((t) => !t.deletedAt && t.orderNumber === o && Date.now() - new Date(t.createdAt).getTime() < win && t.id !== prefill?.id) || null;
   }, [d.orderNumber, state.tickets, m.duplicateWindowHours, prefill?.id]);
   const reset = () => { setD({ ...EMPTY_TICKET, tech: state.settings.currentTech, clock: clockDefault }); setAttempted(false); };
-  return { d, set, load, errors, valid, isBlank, reset, order, dupe, problems, attempt: () => setAttempted(true) };
+  return { d, set, load, errors, valid, isBlank, reset, order, dupe, problems, needDesc, attempt: () => setAttempted(true) };
 }
 
 /** Shared fields — used by the Quick Log stage, the T modal and the edit modal. */
 export function TicketFields({ draft, autoFocus, compactTypes, showClock = true, orderRef, onScan }) {
   const { state, openTicket } = useStore();
-  const { d, set, errors, isBlank, order, dupe } = draft;
+  const { d, set, errors, isBlank, order, dupe, needDesc } = draft;
   const m = state.management || {};
   const localRef = useRef(null);
   const ref = orderRef || localRef;
@@ -91,8 +93,8 @@ export function TicketFields({ draft, autoFocus, compactTypes, showClock = true,
           <Input className="mono" autoComplete="off" placeholder="On the device or box" value={d.serial || ''} onChange={(e) => set('serial', e.target.value)} />
         </Field>
       )}
-      <Field group label="Description" optional={!isBlank} error={errors.description} hint={isBlank ? 'No order # or name — describe the service so the ticket means something later.' : 'What was done or requested.'} className="span-2">
-        <Textarea placeholder="e.g. Firmware update Sony A7R V 2.00 → 3.01 via card; paired with iPhone." value={d.description} onChange={(e) => set('description', e.target.value)} rows={2} />
+      <Field group label="Description" required={needDesc} optional={!needDesc && !isBlank} error={errors.description} hint={needDesc ? 'Required — what was done or requested. Tap a template below to fill it fast.' : isBlank ? 'No order # or name — describe the service so the ticket means something later.' : 'What was done or requested.'} className="span-2">
+        <Textarea invalid={!!errors.description} placeholder="e.g. Firmware update Sony A7R V 2.00 → 3.01 via card; paired with iPhone." value={d.description} onChange={(e) => set('description', e.target.value)} rows={2} />
         {templates.length > 0 && (
           <span className="templates">
             {templates.slice(0, 8).map((tpl) => <button type="button" key={tpl} className="tpl" onClick={() => set('description', d.description.trim() ? `${d.description.trim()} · ${tpl}` : tpl)} title="Add to the description">{tpl}</button>)}

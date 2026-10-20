@@ -18,10 +18,12 @@ import { WARRANTY_CATEGORIES } from '../lib/warranty';
 import { copyText, cx, dayKey, downloadText, fmtDateTime, matches, toCSV } from '../lib/utils';
 import { webhookPayload, useStore } from './GTSApp';
 import { BrandSwatch } from './warranty-ui';
+import { PromoMedia, REPO_VIDEO, embedFor, useRepoVideo } from './PromoStage';
+import { DEFAULT_PROMO_SLIDES } from '../lib/constants';
 import { Btn, Chip, Field, Icon, Input, Panel, Segmented, Select, Textarea, Toggle } from './ui';
 
 const SECTIONS = [
-  ['hours', 'Store & hours', 'clock'], ['service', 'Service clock', 'timer'], ['rules', 'Ticket rules', 'clipboard'], ['features', 'Features', 'sparkles'],
+  ['promo', 'Promo screen', 'video'], ['hours', 'Store & hours', 'clock'], ['service', 'Service clock', 'timer'], ['rules', 'Ticket rules', 'clipboard'], ['features', 'Features', 'sparkles'],
   ['security', 'Security', 'lock'], ['privacy', 'Privacy', 'shield'], ['warranty', 'Warranty directory', 'shield-check'], ['integrations', 'Integrations', 'layers'],
   ['diagnostics', 'Diagnostics', 'server'], ['config', 'Configuration', 'code'],
 ];
@@ -48,6 +50,7 @@ export default function ManagementSystem() {
       <nav className="sysnav" aria-label="System sections">
         {SECTIONS.map(([id, label, icon]) => <button key={id} type="button" className="sysnav-item" onClick={() => document.getElementById(`sys-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })}><Icon name={icon} size={13} />{label}</button>)}
       </nav>
+      <PromoPanel />
       <div className="grid cols-2 sys-grid">
         <HoursPanel />
         <ServicePanel />
@@ -63,6 +66,88 @@ export default function ManagementSystem() {
       </div>
       <ConfigPanel />
     </div>
+  );
+}
+
+// ─── Promo screen ──────────────────────────────────────────────────────────
+function PromoPanel() {
+  const { m, set, toast, state } = useMgmt();
+  const f = m.features || {};
+  const repo = useRepoVideo();
+  const [storage, setStorage] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [link, setLink] = useState(m.promoVideoUrl || '');
+  const [preview, setPreview] = useState(false);
+  const [slides, setSlides] = useState(() => (m.promoSlides || DEFAULT_PROMO_SLIDES).join('\n'));
+  const fileRef = useRef(null);
+  useEffect(() => { fetch('/api/firmware/upload', { cache: 'no-store' }).then((r) => r.json()).then(setStorage).catch(() => setStorage({ enabled: false })); }, []);
+  useEffect(() => { setLink(m.promoVideoUrl || ''); }, [m.promoVideoUrl]);
+  const url = (m.promoVideoUrl || '').trim();
+  const source = url ? (embedFor(url) ? (/vimeo/i.test(url) ? 'Vimeo link' : 'YouTube link') : m.promoVideoName ? `Uploaded · ${m.promoVideoName}` : 'Video link') : repo ? `Repo file · ${REPO_VIDEO}` : 'Built-in animated promo (no video yet)';
+  const upload = async (file) => {
+    if (!file) return;
+    if (!/^video\//.test(file.type) && !/\.(mp4|webm|mov|m4v)$/i.test(file.name)) { toast('Pick a video file (MP4, WebM or MOV)', { tone: 'warning' }); return; }
+    if (!storage?.enabled) { toast('File storage isn’t attached yet (Vercel → Storage → Blob) — paste a YouTube link for now', { tone: 'warning', duration: 8000 }); return; }
+    setBusy(true); setProgress(0);
+    try {
+      const { upload: put } = await import('@vercel/blob/client');
+      const safe = file.name.replace(/[^\w.\-() ]+/g, '_');
+      const blob = await put(`promo/${safe}`, file, { access: 'public', handleUploadUrl: '/api/firmware/upload', clientPayload: JSON.stringify({ key: state.settings.syncPasscode }), onUploadProgress: (p) => setProgress(Math.round(p.percentage || 0)) });
+      set({ promoVideoUrl: blob.url, promoVideoName: file.name }, `Promo video uploaded: ${file.name}`);
+      toast('Promo video uploaded — every station plays it now', { tone: 'success' }); setPreview(true);
+    } catch (e) { toast(`Upload failed: ${String(e?.message || e)}`, { tone: 'error', duration: 9000 }); }
+    setBusy(false);
+  };
+  const saveLink = () => {
+    const v = link.trim();
+    if (v && !/^https:\/\//.test(v)) { toast('Use an https:// link (YouTube, Vimeo or a direct .mp4)', { tone: 'warning' }); return; }
+    if (/drive\.google\.com/i.test(v)) toast('Google Drive links usually won’t play inside a website — upload the file here or use an unlisted YouTube link', { tone: 'warning', duration: 9000 });
+    set({ promoVideoUrl: v, promoVideoName: '' }, v ? 'Promo video link set' : 'Promo video removed'); setPreview(!!v);
+  };
+  return (
+    <Panel id="sys-promo" title="Promo screen" icon="video" sub="While a customer’s ticket is in service the counter screen plays your promo almost full screen — the ticket stays editable along the bottom."
+      actions={<Chip size="sm" tone={url || repo ? 'green' : 'amber'} icon={url || repo ? 'check' : 'info'}>{url || repo ? 'Video set' : 'No video yet'}</Chip>}>
+      <div className="promo-admin">
+        <div className="stack" style={{ gap: 0 }}>
+          <Setting title="Promo screen" desc="Turn the whole feature on or off.">
+            <Toggle on={f.promo !== false} onChange={(v) => set({ features: { ...f, promo: v } }, `Promo screen ${v ? 'on' : 'off'}`)} label="Promo screen" />
+          </Setting>
+          <Setting title="Open automatically" desc="As soon as a ticket starts running (logged or scanned). Esc minimises; the video button on a running ticket (Now serving) brings it back.">
+            <Toggle on={m.promoAutoOpen !== false} onChange={(v) => set({ promoAutoOpen: v })} label="Open automatically" />
+          </Setting>
+          <Setting title="Sound" desc="Start unmuted. Browsers may still block sound until someone clicks the page once.">
+            <Toggle on={!!m.promoSound} onChange={(v) => set({ promoSound: v })} label="Sound" />
+          </Setting>
+          <Setting title="Scrolling services line" desc="A ticker across the top listing what GTS does.">
+            <Toggle on={m.promoTicker !== false} onChange={(v) => set({ promoTicker: v })} label="Ticker" />
+          </Setting>
+          <div className="setting" style={{ display: 'block' }}>
+            <div className="setting-title">Video</div>
+            <div className="setting-desc" style={{ marginBottom: 8 }}>Now playing: <b>{source}</b></div>
+            <div className={cx('promo-drop', busy && 'is-busy', !storage?.enabled && 'is-off')} onClick={() => !busy && fileRef.current?.click()}
+              onDragOver={(e) => { e.preventDefault(); }} onDrop={(e) => { e.preventDefault(); upload(e.dataTransfer.files?.[0]); }}>
+              <Icon name="upload" size={20} />
+              <span>{busy ? `Uploading… ${progress}%` : storage === null ? 'Checking storage…' : storage.enabled ? <><b>Upload the promo video</b> — drop it here or click (MP4 / WebM / MOV)</> : <><b>File storage isn’t attached</b> — Vercel → project → Storage → Blob, then redeploy. Or paste a link below.</>}</span>
+              {busy && <i className="promo-drop-bar" style={{ width: `${progress}%` }} />}
+            </div>
+            <input ref={fileRef} type="file" accept="video/*" style={{ display: 'none' }} onChange={(e) => { upload(e.target.files?.[0]); e.target.value = ''; }} />
+            <div className="row" style={{ gap: 6, marginTop: 8 }}>
+              <Input className="mono" placeholder="…or paste a link: unlisted YouTube, Vimeo or a direct .mp4" value={link} onChange={(e) => setLink(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') saveLink(); }} />
+              <Btn size="sm" variant="primary" onClick={saveLink} disabled={link.trim() === url}>Save</Btn>
+              {url && <Btn size="sm" variant="ghost" icon="x" onClick={() => { set({ promoVideoUrl: '', promoVideoName: '' }, 'Promo video removed'); setLink(''); }} title="Remove — falls back to the repo file or the built-in promo" aria-label="Remove video" />}
+            </div>
+            <div className="faint" style={{ fontSize: 11.5, marginTop: 6 }}>Also works: add the file to the repo as <code>public/promo/gts-promo.mp4</code> — it plays whenever no upload or link is set.</div>
+          </div>
+        </div>
+        <div className="stack" style={{ gap: 10 }}>
+          <div className="promo-preview">{preview ? <PromoMedia muted /> : <button type="button" className="promo-preview-btn" onClick={() => setPreview(true)}><Icon name="play" size={28} /><span>Preview</span></button>}</div>
+          <Field label="Promo lines" hint="One per line · “Headline | smaller line”. Used for the ticker, and for the built-in promo when there’s no video.">
+            <Textarea rows={6} value={slides} onChange={(e) => setSlides(e.target.value)} onBlur={() => { const list = slides.split('\n').map((x) => x.trim()).filter(Boolean); set({ promoSlides: list.length ? list : null }); }} />
+          </Field>
+        </div>
+      </div>
+    </Panel>
   );
 }
 
@@ -136,6 +221,7 @@ function RulesPanel() {
   const templates = m.templates || [];
   return (
     <Panel id="sys-rules" title="Ticket rules" icon="clipboard" sub="What a valid Quick Log ticket looks like at this counter.">
+      <Setting title="Description required" desc="Every ticket must say what was done (e.g. “Firmware update”) — it won’t save or finish without it."><Toggle on={m.requireDescription !== false} onChange={(v) => set({ requireDescription: v }, `Description ${v ? 'required' : 'optional'}`)} label="Description required" /></Setting>
       <Setting title="Service type required"><Toggle on={!!m.requireServiceType} onChange={(v) => set({ requireServiceType: v }, `Service type ${v ? 'required' : 'optional'}`)} label="Service type required" /></Setting>
       <Setting title="Order number required" desc="Off by default — walk-ups without an order still get logged."><Toggle on={!!m.requireOrderNumber} onChange={(v) => set({ requireOrderNumber: v }, `Order # ${v ? 'required' : 'optional'}`)} label="Order number required" /></Setting>
       <Setting title="Order number check" desc="Warn shows a hint, Block refuses to save a number that doesn’t match.">

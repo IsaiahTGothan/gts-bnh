@@ -346,6 +346,7 @@ function build(THREE, host, { apiRef, anchorRef, intensity, initial = {} }) {
   function loop(now) {
     raf = 0;
     if (document.hidden || !visible) return;
+    if (document.body.classList.contains('promo-open')) { last = now; raf = requestAnimationFrame(loop); return; } // hidden behind the promo screen
     const dt = Math.min(0.05, (now - last) / 1000); last = now;
     time += dt * speed;
 

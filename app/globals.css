@@ -1713,3 +1713,118 @@ button.metric:hover { border-color: var(--c); transform: translateY(-1px); }
 
 /* While a modal or drawer is open, toasts move to the top so they never cover its Save / Done buttons. */
 body:has(.modal-wrap, .drawer) .toasts { top: 16px; bottom: auto; }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   16. V4.2 — PROMO SCREEN (ad while a ticket is in service)
+   Sized for the 24" iMac at the counter: the video takes almost the whole
+   screen, the ticket dock stays along the bottom. Always dark.
+   ═══════════════════════════════════════════════════════════════════════════ */
+.promo {
+  --bg-1: #090e16; --bg-2: #0e151f; --bg-3: #141d2a; --bg-4: #1a2536;
+  --line: rgba(148, 163, 184, 0.14); --line-2: rgba(148, 163, 184, 0.26);
+  --text: #e8eef6; --text-2: #9aa8bb; --text-3: #66748a; color-scheme: dark;
+  position: fixed; inset: 0; z-index: 90; display: grid; grid-template-rows: minmax(0, 1fr) auto auto; gap: 1vh;
+  padding: 1.2vh 1.2vw; background: radial-gradient(120% 80% at 50% 0%, #0b1622, #020408 70%); color: var(--text);
+  animation: promoIn 420ms var(--ease) both;
+}
+@keyframes promoIn { from { opacity: 0 } to { opacity: 1 } } /* opacity only: a scaling layer with <video> inside can be mis-composited */
+.promo-media { position: relative; overflow: hidden; border-radius: 18px; background: #000; container-type: size; min-height: 0; box-shadow: 0 0 0 1px rgba(255,255,255,0.06), 0 30px 80px -30px rgba(0,0,0,0.9); }
+.promo-video-bg { position: absolute; inset: -6%; width: 112%; height: 112%; object-fit: cover; filter: blur(42px) brightness(0.5) saturate(1.3); }
+.promo-video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+.promo-embed { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+
+.promo-top { position: absolute; top: calc(1.2vh + 14px); left: calc(1.2vw + 16px); right: calc(1.2vw + 16px); display: flex; align-items: center; justify-content: space-between; pointer-events: none; z-index: 2; }
+.promo-brand, .promo-top-actions { pointer-events: auto; }
+.promo-brand { display: inline-flex; align-items: center; gap: 12px; padding: 8px 16px 8px 8px; border-radius: 999px; background: rgba(4, 8, 14, 0.55); border: 1px solid rgba(255,255,255,0.1); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); }
+.promo-brand b { display: block; font-family: var(--font-display); font-size: 15px; letter-spacing: 0.02em; }
+.promo-brand small { display: block; font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: rgba(232,238,246,0.6); }
+.promo-top-actions { display: flex; gap: 8px; }
+.promo-icon { width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; color: #fff; background: rgba(4, 8, 14, 0.55); border: 1px solid rgba(255,255,255,0.12); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); transition: background var(--fast), transform var(--fast); }
+.promo-icon:hover { background: rgba(255,255,255,0.16); transform: scale(1.05); }
+
+.promo-ticker { overflow: hidden; border-radius: 12px; background: linear-gradient(90deg, rgba(34,211,238,0.12), rgba(167,139,250,0.12)); border: 1px solid rgba(34,211,238,0.22); height: 40px; display: flex; align-items: center; mask-image: linear-gradient(90deg, transparent, #000 4%, #000 96%, transparent); -webkit-mask-image: linear-gradient(90deg, transparent, #000 4%, #000 96%, transparent); }
+.promo-ticker-track { display: flex; white-space: nowrap; animation: ticker 60s linear infinite; font-family: var(--font-display); font-size: 17px; font-weight: 600; letter-spacing: 0.02em; color: #dff7ff; }
+.promo-ticker-track span { padding-right: 0; }
+@keyframes ticker { from { transform: translateX(0) } to { transform: translateX(-50%) } }
+
+/* built-in promo (no video yet) */
+.promo-builtin { background: radial-gradient(90% 90% at 50% 40%, #0c2433, #02060b 75%); }
+.promo-aurora i { position: absolute; border-radius: 50%; filter: blur(80px); opacity: 0.45; animation: aurora 16s ease-in-out infinite alternate; }
+.promo-aurora i:nth-child(1) { width: 55cqw; height: 70cqh; left: -8cqw; top: -10cqh; background: radial-gradient(circle, rgba(34,211,238,0.55), transparent 70%); }
+.promo-aurora i:nth-child(2) { width: 50cqw; height: 65cqh; right: -10cqw; bottom: -15cqh; background: radial-gradient(circle, rgba(167,139,250,0.5), transparent 70%); animation-delay: -5s; }
+.promo-aurora i:nth-child(3) { width: 35cqw; height: 45cqh; left: 35cqw; top: 30cqh; background: radial-gradient(circle, rgba(67,181,106,0.35), transparent 70%); animation-delay: -10s; }
+.promo-rain { position: absolute; inset: 0; width: 100%; height: 100%; }
+.promo-slide { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3cqh; text-align: center; padding: 0 8cqw; animation: slideIn2 900ms var(--ease) both; }
+.promo-slide .gts-mark { width: clamp(64px, 13cqh, 180px); height: auto; filter: drop-shadow(0 0 40px rgba(239,68,68,0.45)); }
+.promo-slide h2 { font-family: var(--font-display); font-size: clamp(28px, 6.2cqw, 128px); line-height: 1.02; letter-spacing: -0.02em; font-weight: 700; background: linear-gradient(180deg, #ffffff, #b9ecff); -webkit-background-clip: text; background-clip: text; color: transparent; text-shadow: 0 0 60px rgba(34,211,238,0.25); max-width: 18ch; }
+.promo-slide p { font-size: clamp(14px, 2.4cqw, 46px); color: rgba(232,238,246,0.78); max-width: 34ch; }
+@keyframes slideIn2 { from { opacity: 0; transform: translateY(3cqh) scale(0.97); filter: blur(8px) } to { opacity: 1; transform: none; filter: none } }
+.promo-dots { position: absolute; bottom: 4cqh; left: 0; right: 0; display: flex; justify-content: center; gap: 10px; }
+.promo-dots span { width: 10px; height: 10px; border-radius: 50%; background: rgba(255,255,255,0.25); transition: all 400ms var(--ease); }
+.promo-dots span.is-on { width: 34px; border-radius: 6px; background: #22d3ee; box-shadow: 0 0 14px #22d3ee; }
+
+/* the dock */
+.promo-dock {
+  --c: var(--accent); position: relative; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 1.2vw; align-items: end;
+  padding: 14px 18px; border-radius: 18px; background: rgba(9, 14, 22, 0.88); border: 1px solid rgba(255,255,255,0.1);
+  box-shadow: 0 -10px 40px -20px rgba(0,0,0,0.9), inset 0 1px 0 rgba(255,255,255,0.05);
+}
+.promo-dock::before { content: ''; position: absolute; left: 18px; right: 18px; top: 0; height: 2px; border-radius: 2px; background: var(--c); box-shadow: 0 0 14px var(--c); opacity: 0.8; }
+.promo-dock-clock { display: grid; gap: 4px; min-width: 190px; }
+.promo-dock-clock b { font-size: 38px; line-height: 1; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: 0.02em; }
+.promo-dock-clock b.is-over { color: var(--amber); }
+.promo-dock-clock small { font-size: 11px; color: var(--text-3); font-family: var(--font-mono); letter-spacing: 0.08em; text-transform: uppercase; }
+.promo-dock-bar { height: 4px; border-radius: 4px; background: rgba(255,255,255,0.1); overflow: hidden; }
+.promo-dock-bar i { display: block; height: 100%; background: var(--c); transition: width 900ms linear; }
+.promo-dock-fields { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 0.9fr) minmax(0, 2fr); gap: 10px; align-items: end; }
+.pf { display: grid; gap: 5px; min-width: 0; position: relative; }
+.pf > span:first-child { font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--text-3); }
+.pf em { font-style: normal; color: var(--accent); margin-left: 4px; }
+.pf .input, .pf .select select { height: 46px; font-size: 16px; background: rgba(255,255,255,0.05); }
+.pf-desc.is-missing .input { border-color: color-mix(in srgb, var(--amber) 70%, transparent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--amber) 18%, transparent); }
+.pf-desc.is-missing em { color: var(--amber); }
+.pf-tpls { position: absolute; left: 0; right: 0; bottom: calc(100% + 10px); display: flex; flex-wrap: wrap; gap: 6px; }
+.pf-tpls button { font-size: 12.5px; padding: 6px 12px; border-radius: 999px; background: rgba(9, 14, 22, 0.85); border: 1px solid rgba(34,211,238,0.35); color: #dff7ff; backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); transition: all var(--fast); }
+.pf-tpls button:hover { background: var(--accent); color: var(--accent-ink); }
+.promo-dock-actions { display: flex; gap: 8px; }
+.pbtn { display: inline-flex; align-items: center; gap: 8px; height: 56px; padding: 0 20px; border-radius: 14px; font-weight: 700; font-size: 15px; color: var(--text); background: rgba(255,255,255,0.07); border: 1px solid rgba(255,255,255,0.14); transition: all var(--fast) var(--ease); }
+.pbtn:hover { background: rgba(255,255,255,0.14); transform: translateY(-1px); }
+.pbtn.is-done { min-width: 150px; justify-content: center; font-size: 17px; color: #fff; background: linear-gradient(180deg, #4cc777, #2f8f4c); border-color: transparent; box-shadow: 0 10px 30px -10px rgba(67,181,106,0.8); }
+.pbtn.is-done:hover { filter: brightness(1.08); }
+.promo-switch { grid-column: 1 / -1; display: flex; gap: 6px; flex-wrap: wrap; }
+.promo-switch button { font-size: 12px; padding: 4px 10px; border-radius: 999px; border: 1px solid var(--line-2); color: var(--text-2); font-family: var(--font-mono); }
+.promo-switch button.is-on { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
+.shake { animation: shake 500ms ease; }
+@keyframes shake { 10%, 90% { transform: translateX(-2px) } 20%, 80% { transform: translateX(4px) } 30%, 50%, 70% { transform: translateX(-7px) } 40%, 60% { transform: translateX(7px) } }
+
+.promo-thanks { position: absolute; inset: 0; z-index: 3; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; text-align: center; background: radial-gradient(circle at 50% 45%, rgba(67,181,106,0.3), rgba(2,4,8,0.88) 65%); animation: fade 300ms var(--ease); }
+.promo-thanks svg { color: #4cc777; filter: drop-shadow(0 0 20px rgba(67,181,106,0.8)); }
+.promo-thanks b { font-family: var(--font-display); font-size: clamp(36px, 6vw, 96px); }
+.promo-thanks span { font-size: clamp(14px, 1.6vw, 24px); color: var(--text-2); }
+
+/* RGB mode reaches the promo too */
+[data-rgb] .promo-ticker { border-color: transparent; background: linear-gradient(#0b1018, #0b1018) padding-box, var(--rgb) border-box; background-size: auto, 200% 100%; animation: rgbslide 3s linear infinite; }
+
+/* Management → System → Promo screen */
+.promo-admin { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr); gap: 18px; }
+.promo-drop { position: relative; overflow: hidden; display: flex; align-items: center; gap: 12px; padding: 16px; border-radius: 12px; border: 1.5px dashed color-mix(in srgb, var(--accent) 45%, var(--line-2)); background: var(--accent-soft); cursor: pointer; font-size: 13px; color: var(--text-2); transition: border-color var(--fast); }
+.promo-drop:hover { border-color: var(--accent); }
+.promo-drop svg { color: var(--accent); flex: none; }
+.promo-drop.is-off { background: var(--amber-soft); border-color: color-mix(in srgb, var(--amber) 45%, transparent); cursor: default; }
+.promo-drop-bar { position: absolute; left: 0; bottom: 0; height: 3px; background: var(--accent); transition: width 200ms; }
+.promo-preview { aspect-ratio: 16 / 9; border-radius: 12px; overflow: hidden; background: #000; border: 1px solid var(--line-2); position: relative; }
+.promo-preview .promo-media { position: absolute; inset: 0; border-radius: 0; }
+.promo-preview-btn { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; color: #fff; background: radial-gradient(circle, #0c2433, #000); font-weight: 600; }
+.promo-preview-btn svg { color: var(--accent); }
+
+@media (max-width: 1100px) {
+  .promo-dock { grid-template-columns: minmax(0, 1fr) auto; }
+  .promo-dock-fields { grid-column: 1 / -1; grid-row: 2; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .promo-admin { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 640px) {
+  .promo-dock-fields { grid-template-columns: minmax(0, 1fr); }
+  .promo-dock-clock b { font-size: 28px; }
+  .pbtn { height: 46px; padding: 0 14px; }
+  .promo-brand small { display: none; }
+}
