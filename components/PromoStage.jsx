@@ -93,6 +93,40 @@ export default function PromoStage({ ticketId, onClose, onSwitch }) {
 }
 
 // ─── The ad ────────────────────────────────────────────────────────────────
+/**
+ * Each station keeps its own copy of the promo video (Cache Storage), so an 84 MB ad
+ * downloads once per screen instead of every time the promo opens. The first play streams
+ * from the network while the copy is saved in the background; later plays use the copy.
+ * Any failure (CORS, quota, private-browsing) quietly falls back to streaming.
+ */
+const PROMO_CACHE = 'gts-promo-v1';
+function useLocalCopy(src) {
+  const [local, setLocal] = useState(null);
+  useEffect(() => {
+    if (!src || typeof caches === 'undefined') return undefined;
+    let alive = true; let objectUrl = null;
+    const key = new Request(`/__promo-cache/${encodeURIComponent(src)}`);
+    (async () => {
+      try {
+        const cache = await caches.open(PROMO_CACHE);
+        const hit = await cache.match(key);
+        if (hit) {
+          objectUrl = URL.createObjectURL(await hit.blob());
+          if (alive) setLocal(objectUrl); else URL.revokeObjectURL(objectUrl);
+          return;
+        }
+        // save a copy for next time (don't swap the playing video mid-loop)
+        const res = await fetch(src, { cache: 'no-store' });
+        if (!res.ok || !/video|octet/.test(res.headers.get('content-type') || '')) return;
+        await cache.put(key, new Response(await res.blob(), { headers: { 'content-type': res.headers.get('content-type') } }));
+        for (const old of await cache.keys()) if (old.url !== key.url) cache.delete(old); // only the current ad is kept
+      } catch { /* streaming still works */ }
+    })();
+    return () => { alive = false; if (objectUrl) URL.revokeObjectURL(objectUrl); };
+  }, [src]);
+  return local;
+}
+
 export function PromoMedia({ muted }) {
   const { state } = useStore();
   const m = state.management || {};
@@ -100,7 +134,9 @@ export function PromoMedia({ muted }) {
   const [failed, setFailed] = useState(false);
   const url = (m.promoVideoUrl || '').trim();
   const embed = url ? embedFor(url, muted) : null;
-  const src = !failed && url && !embed ? url : !url && repo ? REPO_VIDEO : null;
+  const remote = !failed && url && !embed ? url : !url && repo ? REPO_VIDEO : null;
+  const local = useLocalCopy(remote && remote !== REPO_VIDEO ? remote : null);
+  const src = local || remote;
   const fgRef = useRef(null); const bgRef = useRef(null);
   useEffect(() => { if (fgRef.current) fgRef.current.muted = muted; }, [muted]);
   // keep the blurred backdrop copy in step with the main video

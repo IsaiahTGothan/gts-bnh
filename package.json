@@ -10,7 +10,7 @@
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.0",
-    "@vercel/blob": "^1.1.1",
+    "@vercel/blob": "^2.8.2",
     "@zxing/browser": "^0.1.5",
     "@zxing/library": "^0.21.3",
     "next": "^15.3.0",
