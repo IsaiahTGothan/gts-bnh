@@ -299,7 +299,8 @@ function QuickLogStage({ prefill, onPrefillUsed, onConvert, onUnix }) {
       toast(Object.values(draft.problems)[0] || 'Check the form', { tone: 'warning' });
       return;
     }
-    const t = api.addTicket(ticketPayload(d, startedAt));
+    let t;
+    try { t = api.addTicket(ticketPayload(d, startedAt)); } catch (e) { draft.attempt(); toast(e.message, { tone: 'warning' }); return; }
     sfx('success'); sceneApi.current?.burst();
     setLast({ tag: t.tag, secs: t.logSeconds, id: t.id, order: t.orderNumber, name: t.customerName, at: Date.now(), done: !!t.serviceEndedAt });
     toast(`${t.tag} logged${t.logSeconds ? ` in ${t.logSeconds}s` : ''}${t.serviceStartedAt && !t.serviceEndedAt ? ' · service clock running' : ''}`, { tone: 'success' });
@@ -307,6 +308,8 @@ function QuickLogStage({ prefill, onPrefillUsed, onConvert, onUnix }) {
     if (!touch) setTimeout(() => orderRef.current?.focus(), 30);
     if (then === 'convert') onConvert(t);
     if (then === 'unix') onUnix(t);
+    // ticket is running → the counter screen becomes the promo (Management → System → Promo screen)
+    if (!then && t.serviceStartedAt && !t.serviceEndedAt) setTimeout(() => window.dispatchEvent(new CustomEvent('gts:promo-open', { detail: { id: t.id } })), 450);
   };
   const clear = () => { draft.reset(); setStartedAt(null); orderRef.current?.focus(); };
 
@@ -441,14 +444,14 @@ function NowServing({ onEdit }) {
 }
 
 function ServingTile({ t, onEdit, editing, onToggle }) {
-  const { api, state, sfx, toast } = useStore();
+  const { api, state, sfx, toast, features } = useStore();
   const st = serviceState(t);
   const now = useTick(1000, st === 'running');
   const ms = serviceMs(t, now);
   const target = serviceTarget(state.management, t.serviceType) * 60_000;
   const over = ms > target ? (ms > target * 2 ? 'is-bad' : 'is-warn') : '';
   const svc = SERVICE_BY_ID[t.serviceType];
-  const done = () => { api.serviceAction(t.id, 'finish'); sfx('success'); toast(`${t.tag} done in ${fmtDur(ms)}`, { tone: 'success', action: { label: 'Undo', onClick: () => api.serviceAction(t.id, 'resume') } }); };
+  const done = () => { if (!api.serviceAction(t.id, 'finish')) return; sfx('success'); toast(`${t.tag} done in ${fmtDur(ms)}`, { tone: 'success', action: { label: 'Undo', onClick: () => api.serviceAction(t.id, 'resume') } }); };
   return (
     <div id={`serve-${t.id}`} className={cx('serve', `is-${st}`, over, editing && 'is-editing')} style={{ '--c': svc?.color || 'var(--accent)' }}>
       <div className="serve-top">
@@ -462,6 +465,7 @@ function ServingTile({ t, onEdit, editing, onToggle }) {
       <div className="serve-actions">
         {st === 'running' ? <Btn size="sm" variant="ghost" icon="pause" onClick={() => api.serviceAction(t.id, 'pause')} title="Pause the clock">Pause</Btn> : <Btn size="sm" variant="ghost" icon="play" onClick={() => api.serviceAction(t.id, 'resume')}>Resume</Btn>}
         <Btn size="sm" variant="success" icon="check" onClick={done}>Done</Btn>
+        {features.promo !== false && <Btn size="xs" variant="ghost" icon="video" onClick={() => window.dispatchEvent(new CustomEvent('gts:promo-open', { detail: { id: t.id, force: true } }))} title="Show the promo screen for this customer" aria-label="Promo screen" />}
         <Btn size="xs" variant={editing ? 'outline-accent' : 'ghost'} icon="edit" onClick={onToggle} title="Edit details while the clock runs" aria-label="Edit details" aria-expanded={editing} />
       </div>
       {editing && <LiveEditor t={t} onMore={onEdit} />}
@@ -471,7 +475,8 @@ function ServingTile({ t, onEdit, editing, onToggle }) {
 
 /** Edit a ticket while its clock keeps running — changes save as you type. */
 function LiveEditor({ t, onMore }) {
-  const { api, warrantyBrands } = useStore();
+  const { api, warrantyBrands, state } = useStore();
+  const needDesc = state.management?.requireDescription !== false;
   const [d, setD] = useState(() => ({ orderNumber: t.orderNumber || '', customerName: t.customerName || '', serviceType: t.serviceType || '', description: t.description || '', warrantyBrand: t.warrantyBrand || '' }));
   const first = useRef(null);
   useEffect(() => { first.current?.focus(); }, []);
@@ -479,6 +484,7 @@ function LiveEditor({ t, onMore }) {
   useEffect(() => {
     const patch = {};
     for (const k of Object.keys(d)) { const cur = t[k] || ''; if ((d[k] || '') !== cur) patch[k] = d[k] || (k === 'serviceType' || k === 'warrantyBrand' ? null : ''); }
+    if (patch.description !== undefined && needDesc && d.description.trim().length < 3) delete patch.description; // never save it empty
     if (!Object.keys(patch).length) return undefined;
     const timer = setTimeout(() => api.updateTicket(t.id, { ...patch, ...(patch.serviceType !== undefined && patch.serviceType !== 'warranty' ? { warrantyBrand: null } : {}) }), 450);
     return () => clearTimeout(timer);
@@ -492,7 +498,7 @@ function LiveEditor({ t, onMore }) {
         <Select value={d.serviceType} onChange={set('serviceType')} aria-label="Service type"><option value="">Type…</option>{SERVICE_TYPES.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}</Select>
         {d.serviceType === 'warranty' && <Select value={d.warrantyBrand} onChange={set('warrantyBrand')} aria-label="Warranty brand"><option value="">Brand…</option>{warrantyBrands.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}</Select>}
       </div>
-      <textarea className="textarea" rows={2} placeholder="What are we doing? (saves as you type)" value={d.description} onChange={set('description')} aria-label="Description" />
+      <textarea className={cx('textarea', needDesc && d.description.trim().length < 3 && 'is-invalid')} rows={2} placeholder="What are we doing? Required — saves as you type" value={d.description} onChange={set('description')} aria-label="Description" />
       <div className="row" style={{ gap: 6, justifyContent: 'space-between' }}>
         <span className="faint" style={{ fontSize: 11 }}><span className="svc-live" style={{ display: 'inline-block', marginRight: 6 }} />Saves automatically · clock keeps running</span>
         <Btn size="xs" variant="ghost" icon="timer" onClick={onMore}>Times & more</Btn>
@@ -724,7 +730,7 @@ function ServiceRow({ t }) {
       {st === 'none' && <Btn size="xs" variant="ghost" icon="play" onClick={() => { api.serviceAction(t.id, 'start'); sfx('click'); }}>Start</Btn>}
       {st === 'running' && <Btn size="xs" variant="ghost" icon="pause" onClick={() => api.serviceAction(t.id, 'pause')} aria-label="Pause" title="Pause" />}
       {st === 'paused' && <Btn size="xs" variant="ghost" icon="play" onClick={() => api.serviceAction(t.id, 'resume')} aria-label="Resume" title="Resume" />}
-      {(st === 'running' || st === 'paused') && <Btn size="xs" variant="success" icon="check" onClick={() => { api.serviceAction(t.id, 'finish'); sfx('success'); }}>Done</Btn>}
+      {(st === 'running' || st === 'paused') && <Btn size="xs" variant="success" icon="check" onClick={() => { if (api.serviceAction(t.id, 'finish')) sfx('success'); }}>Done</Btn>}
       {st === 'done' && <Btn size="xs" variant="ghost" icon="undo" onClick={() => api.serviceAction(t.id, 'resume')} title="Resume the clock (customer came back)">Resume</Btn>}
     </div>
   );

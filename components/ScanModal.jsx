@@ -17,7 +17,7 @@ import { useStore } from './GTSApp';
 import { Btn, Chip, Icon, Input, Modal, Segmented, Select, Toggle } from './ui';
 
 // 1–9, 0, − pick the 11 service types without touching the mouse
-const TYPE_KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '-'];
+const TYPE_KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '-', '='];
 
 export default function ScanModal({ initialCode, initialFormat, onClose }) {
   const { state, api, toast, sfx, openTicket } = useStore();
@@ -39,15 +39,17 @@ export default function ScanModal({ initialCode, initialFormat, onClose }) {
     setResult({ ...parsed, at: Date.now() });
   }, [m, sfx]);
 
-  const start = (serviceType, extra = {}) => {
-    const r = result; if (!r) return;
+  const start = (serviceType, desc = '', extra = {}) => {
+    const r = result; if (!r) return false;
+    const what = String(desc || '').trim();
+    if (m.requireDescription !== false && what.length < 3) return false; // the ticket must say what we're doing
     const asProduct = r.kind === 'product' && !r.useAsOrder;
     const scannedAt = new Date(r.at).toISOString();
     const t = api.addTicket({
       orderNumber: asProduct ? '' : r.value.trim(),
       customerName: (r.name || '').trim(),
       serviceType: serviceType || null,
-      description: asProduct ? `Product code (UPC/EAN) ${r.value.trim()}` : '',
+      description: asProduct ? `${what}${what ? ' · ' : ''}Product code (UPC/EAN) ${r.value.trim()}` : what,
       serviceStartedAt: scannedAt,
       logSeconds: (Date.now() - r.at) / 1000,
       source: 'scan',
@@ -57,14 +59,16 @@ export default function ScanModal({ initialCode, initialFormat, onClose }) {
     window.dispatchEvent(new CustomEvent('gts:ticket-started', { detail: { id: t.id, tag: t.tag, secs: t.logSeconds, order: t.orderNumber, name: t.customerName } }));
     toast(`${t.tag} started from a scan${t.orderNumber ? ` · order ${t.orderNumber}` : ''} — clock running`, { tone: 'success', action: { label: 'Edit', onClick: () => window.dispatchEvent(new CustomEvent('gts:live-edit', { detail: { id: t.id } })) } });
     if (continuous) setResult(null); else onClose();
+    return true;
   };
   const toForm = () => {
-    window.dispatchEvent(new CustomEvent('gts:prefill', { detail: { orderNumber: result.kind === 'product' && !result.useAsOrder ? '' : result.value, customerName: result.name || '', description: result.kind === 'product' && !result.useAsOrder ? `Product code (UPC/EAN) ${result.value}` : '' } }));
+    const prod = result.kind === 'product' && !result.useAsOrder; const what = (result.desc || '').trim();
+    window.dispatchEvent(new CustomEvent('gts:prefill', { detail: { orderNumber: prod ? '' : result.value, customerName: result.name || '', serviceType: result.type || null, description: prod ? `${what}${what ? ' · ' : ''}Product code (UPC/EAN) ${result.value}` : what } }));
     onClose();
   };
 
   return (
-    <Modal title={result ? 'Scanned — what’s the service?' : 'Scan a barcode'} sub={result ? 'Pick the type and the ticket starts with its clock running. Details stay editable while it runs.' : effective === 'camera' ? 'Hold the barcode 15–25 cm (6–10 in) from the camera, flat and steady.' : 'Pull the trigger on the scanner — it types the number here.'}
+    <Modal title={result ? 'Scanned — what’s the service?' : 'Scan a barcode'} sub={result ? 'Pick the type, say what you’re doing, press Enter — the ticket starts with its clock running.' : effective === 'camera' ? 'Hold the barcode 15–25 cm (6–10 in) from the camera, flat and steady.' : 'Pull the trigger on the scanner — it types the number here.'}
       onClose={onClose} icon="scan" size="lg"
       footer={<>
         <div className="row" style={{ gap: 8 }}>
@@ -163,20 +167,36 @@ function GunView({ onCode, hasCamera, onCamera }) {
 
 // ─── Result → pick the type → start ────────────────────────────────────────
 function ScanResult({ result, setResult, onStart, onRescan, onForm, openTicket }) {
-  const { state } = useStore();
+  const { state, toast } = useStore();
   const m = state.management || {};
   const gridRef = useRef(null);
+  const descRef = useRef(null);
+  const [shake, setShake] = useState(false);
   const asProduct = result.kind === 'product' && !result.useAsOrder;
   const dupe = !asProduct ? state.tickets.find((t) => !t.deletedAt && t.orderNumber && t.orderNumber === result.value.trim() && Date.now() - new Date(t.createdAt).getTime() < (Number(m.duplicateWindowHours) || 24) * 3_600_000) : null;
   const upd = (patch) => setResult((r) => ({ ...r, ...patch }));
   useEffect(() => { gridRef.current?.focus(); }, []);
   const types = SERVICE_TYPES.filter((s) => s.id !== 'warranty' || m.features?.warranty !== false);
+  const needDesc = m.requireDescription !== false;
+  const desc = result.desc || '';
+  const descOk = !needDesc || desc.trim().length >= 3;
+  const templates = (m.templates || []).filter(Boolean).slice(0, 8);
+  const pick = (id) => { upd({ type: result.type === id ? null : id }); setTimeout(() => descRef.current?.focus(), 0); };
+  const go = () => {
+    if (onStart(result.type || null, desc)) return;
+    setShake(true); setTimeout(() => setShake(false), 600);
+    descRef.current?.focus();
+    toast('Say what you’re doing first — e.g. “Firmware update”', { tone: 'warning' });
+  };
   const onKey = (e) => {
     const tag = (e.target?.tagName || '').toLowerCase();
-    if (tag === 'input' || tag === 'textarea') { if (e.key === 'Enter') { e.preventDefault(); gridRef.current?.focus(); } return; }
+    if (tag === 'input' || tag === 'textarea') {
+      if (e.key === 'Enter') { e.preventDefault(); if (e.target === descRef.current) go(); else descRef.current?.focus(); }
+      return;
+    }
     const i = TYPE_KEYS.indexOf(e.key);
-    if (i >= 0 && types[i]) { e.preventDefault(); onStart(types[i].id); return; }
-    if (e.key === 'Enter') { e.preventDefault(); onStart(null); }
+    if (i >= 0 && types[i]) { e.preventDefault(); pick(types[i].id); return; }
+    if (e.key === 'Enter') { e.preventDefault(); go(); }
     if (e.key === 'Backspace') { e.preventDefault(); onRescan(); }
   };
   return (
@@ -197,15 +217,21 @@ function ScanResult({ result, setResult, onStart, onRescan, onForm, openTicket }
       {result.kind === 'other' && <div className="scan-note is-warn"><Icon name="alert-triangle" size={13} /> Doesn’t look like a B&amp;H order number — check it before starting.</div>}
       {dupe && <div className="scan-note is-warn"><Icon name="alert-triangle" size={13} /> Already logged as <button type="button" className="linkish" onClick={() => openTicket(dupe.id)}>{dupe.tag}</button> {relTime(dupe.createdAt)} — same customer?</div>}
 
-      <div className="scan-types" ref={gridRef} tabIndex={-1} aria-label="Service type — press 1 to 0">
+      <div className="scan-step"><span>1</span>Type of service <em>tap or press {TYPE_KEYS[0]}–{TYPE_KEYS[types.length - 1]}</em></div>
+      <div className="scan-types" ref={gridRef} tabIndex={-1} aria-label="Service type">
         {types.map((s, i) => (
-          <button key={s.id} type="button" className="scan-type" style={{ '--c': s.color }} onClick={() => onStart(s.id)}>
+          <button key={s.id} type="button" className={cx('scan-type', result.type === s.id && 'is-on')} style={{ '--c': s.color }} onClick={() => pick(s.id)} aria-pressed={result.type === s.id}>
             <kbd className="kbd">{TYPE_KEYS[i]}</kbd><Icon name={s.icon} size={20} /><span>{s.label}</span>
           </button>
         ))}
       </div>
+      <div className="scan-step"><span>2</span>What are we doing? {needDesc ? <em className="is-req">required</em> : <em>optional</em>}</div>
+      <div className={cx('scan-desc', !descOk && desc && 'is-short', shake && 'shake')}>
+        <Input ref={descRef} className="input-lg" placeholder="e.g. Firmware update + card format — then Enter" value={desc} onChange={(e) => upd({ desc: e.target.value })} aria-label="What are we doing" />
+        {templates.length > 0 && <div className="templates">{templates.map((x) => <button type="button" key={x} className="tpl" onClick={() => { upd({ desc: desc.trim() ? `${desc.trim()} · ${x}` : x }); descRef.current?.focus(); }}>{x}</button>)}</div>}
+      </div>
       <div className="row wrap" style={{ gap: 8, marginTop: 12 }}>
-        <Btn variant="primary" icon="play" onClick={() => onStart(null)}>Start without a type <kbd className="kbd" style={{ marginLeft: 4 }}>↵</kbd></Btn>
+        <Btn variant="primary" size="lg" icon="play" onClick={go} disabled={!descOk}>Start ticket <kbd className="kbd" style={{ marginLeft: 4 }}>↵</kbd></Btn>
         <Btn variant="ghost" icon="scan" onClick={onRescan}>Scan again</Btn>
         <span className="grow" />
         <Btn variant="ghost" icon="edit" onClick={onForm} title="Put the number in the Quick Log form instead of starting right away">Fill the form instead</Btn>

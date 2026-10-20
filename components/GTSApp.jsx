@@ -32,6 +32,7 @@ import FirmwareTab from './FirmwareTab';
 import { Decode, MatrixRain } from './matrix';
 import WarrantyTab from './WarrantyTab';
 import ScanModal from './ScanModal';
+import PromoStage from './PromoStage';
 import { createWedge } from '../lib/scan';
 import { AssignmentDrawer, AssignmentForm, TicketForm } from './assignment-views';
 
@@ -123,6 +124,8 @@ function useGTSStore() {
     addTicket: (data) => {
       // Built from the latest state (ref) so the caller gets the record synchronously.
       const cur = stateRef.current;
+      // Management rule: every ticket says what was done (the forms check first; this is the backstop).
+      if (cur.management?.requireDescription !== false && String(data.description || '').trim().length < 3) throw new Error('A description of the service is required.');
       const ts = nowISO();
       const created = {
         id: uid('tk'), kind: 'sf', tag: nextTag(cur.tickets, 'SF'),
@@ -164,7 +167,7 @@ function useGTSStore() {
           case 'unix-clear': return t.unixLoggedAt ? { unixLoggedAt: null, unixBy: null } : null;
           case 'archive': return t.archivedAt ? null : { archivedAt: ts, archivedBy: me };
           case 'unarchive': return t.archivedAt ? { archivedAt: null, archivedBy: null } : null;
-          case 'done': { const p = serviceActions.finish(t, ts); return Object.keys(p).length ? p : null; }
+          case 'done': { if (cur.management?.requireDescription !== false && String(t.description || '').trim().length < 3) return null; const p = serviceActions.finish(t, ts); return Object.keys(p).length ? p : null; }
           case 'tech': return t.tech === arg ? null : { tech: arg || null };
           case 'type': return t.serviceType === arg ? null : { serviceType: arg || null };
           case 'delete': return t.deletedAt ? null : { deletedAt: ts };
@@ -188,7 +191,11 @@ function useGTSStore() {
     // ── V4 service clock (start · pause · resume · finish · clear) ────────
     serviceAction: (id, action) => {
       const cur = stateRef.current;
-      const tk = cur.tickets.find((x) => x.id === id); if (!tk) return;
+      const tk = cur.tickets.find((x) => x.id === id); if (!tk) return false;
+      if (action === 'finish' && cur.management?.requireDescription !== false && String(tk.description || '').trim().length < 3) {
+        window.dispatchEvent(new CustomEvent('gts:need-description', { detail: { id } }));
+        return false;
+      }
       const patch = serviceActions[action]?.(tk);
       if (!patch || !Object.keys(patch).length) return;
       const after = { ...tk, ...patch };
@@ -199,6 +206,7 @@ function useGTSStore() {
         return next;
       });
       if (action === 'finish') emitRef.current?.('ticket.done', after);
+      return true;
     },
     setServiceTimes: (id, patch) => mutate((p) => {
       const t = p.tickets.find((x) => x.id === id); if (!t) return p;
@@ -637,6 +645,7 @@ export default function GTSApp() {
   const [palette, setPalette] = useState(false);
   const [toasts, setToasts] = useState([]);
   const [highlight, setHighlight] = useState(null); // { type, id }
+  const [promoId, setPromoId] = useState(null);     // ticket shown on the promo screen
 
   // Keep the live tech registry in step with the shared roster (render-phase,
   // idempotent — children must see the new team on this same render).
@@ -709,6 +718,7 @@ export default function GTSApp() {
     const wedge = createWedge({
       onScan: (code, el) => {
         if (el?.classList?.contains('order-input')) window.dispatchEvent(new CustomEvent('gts:scan-into-order', { detail: { code } }));
+        setPromoId(null); // next customer: the promo minimises (their ticket keeps running)
         setTab('salesforce');
         openScanner(code);
       },
@@ -735,7 +745,7 @@ export default function GTSApp() {
       const tag = (e.target?.tagName || '').toLowerCase();
       const typing = tag === 'input' || tag === 'textarea' || tag === 'select' || e.target?.isContentEditable;
       if (typing || meta || e.altKey) return;
-      if (modal || drawerId || palette) return;
+      if (modal || drawerId || palette || promoId) return;
       // Single-key shortcuts wait 45 ms: a scanner gun types a whole number in that time,
       // so "1095…" from the gun must not flip through tabs 1, 0, 9…
       clearTimeout(shortcutTimer.current);
@@ -760,7 +770,7 @@ export default function GTSApp() {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [modal, drawerId, palette, goTo, newAssignment, newTicket, api, toast, state?.settings.railCollapsed, state?.settings.rgb]);
+  }, [modal, drawerId, palette, promoId, goTo, newAssignment, newTicket, api, toast, state?.settings.railCollapsed, state?.settings.rgb]);
 
   // ── derived counts for nav badges ────────────────────────────────────
   const counts = useMemo(() => {
@@ -789,6 +799,28 @@ export default function GTSApp() {
   const openWarranty = useCallback((brandId) => { setWarrantyPick(brandId || null); setTab('warranty'); window.scrollTo({ top: 0, behavior: 'smooth' }); }, []);
 
   // ── Management auto-lock after N idle minutes (System → Security) ──────
+  // ── Promo screen: the ad that plays while a ticket is in service ───────
+  const promoOn = state?.management?.features?.promo !== false;
+  const promoAuto = state?.management?.promoAutoOpen !== false;
+  useEffect(() => {
+    const open = (e) => {
+      const d = e.detail || {};
+      if (!d.id || !promoOn || !(d.force || promoAuto)) return;
+      // batch scanning ("Keep scanning" on): don't throw the promo over the scanner after every ticket
+      if (e.type === 'gts:ticket-started' && document.querySelector('.scan-cam, .scan-gun')) return;
+      setModal(null); setPromoId(d.id);
+    };
+    const need = (e) => {
+      toast('Add what you did before finishing — e.g. “Firmware update”', { tone: 'warning' });
+      if (promoOn && e.detail?.id) { setTab('salesforce'); setPromoId(e.detail.id); }
+      else window.dispatchEvent(new CustomEvent('gts:live-edit', { detail: { id: e.detail?.id } }));
+    };
+    window.addEventListener('gts:promo-open', open);
+    window.addEventListener('gts:ticket-started', open);
+    window.addEventListener('gts:need-description', need);
+    return () => { window.removeEventListener('gts:promo-open', open); window.removeEventListener('gts:ticket-started', open); window.removeEventListener('gts:need-description', need); };
+  }, [promoOn, promoAuto, toast]);
+
   // ── RGB mode (device setting, R key) + "hype" bursts on big moments ───
   const [hype, setHype] = useState(false);
   const hypeTimer = useRef(null);
@@ -889,7 +921,11 @@ export default function GTSApp() {
       )}
       {modal?.type === 'ticket' && (
         <TicketForm prefill={modal.props?.prefill} onClose={closeModal}
-          onSave={(data) => { const t = api.addTicket(data); closeModal(); sfx('success'); toast(`${t.tag} logged${t.logSeconds ? ` in ${t.logSeconds}s` : ''}`, { tone: 'success' }); setTab('salesforce'); }} />
+          onSave={(data) => {
+            let t; try { t = api.addTicket(data); } catch (e) { toast(e.message, { tone: 'warning' }); return; }
+            closeModal(); sfx('success'); toast(`${t.tag} logged${t.logSeconds ? ` in ${t.logSeconds}s` : ''}`, { tone: 'success' }); setTab('salesforce');
+            if (t.serviceStartedAt && !t.serviceEndedAt) setTimeout(() => window.dispatchEvent(new CustomEvent('gts:promo-open', { detail: { id: t.id } })), 120);
+          }} />
       )}
       {modal?.type === 'confirm' && <ConfirmDialog {...modal.props} onClose={closeModal} />}
       {modal?.type === 'tech' && <TechPickerModal onClose={closeModal} />}
@@ -898,6 +934,7 @@ export default function GTSApp() {
       {modal?.type === 'whatsnew' && <WhatsNewModal onClose={closeModal} />}
       {modal?.type === 'more' && <MoreSheet onClose={closeModal} />}
       {modal?.type === 'unix' && <UnixScanModal ticketId={modal.props?.ticketId} onClose={closeModal} />}
+      {promoId && <PromoStage ticketId={promoId} onClose={() => setPromoId(null)} onSwitch={setPromoId} />}
       {modal?.type === 'scan' && <ScanModal key={modal.props?.code || 'scan'} initialCode={modal.props?.code} initialFormat={modal.props?.format} onClose={closeModal} />}
       {!state.settings.onboarded && !modal && !booting && <TechPickerModal onClose={() => api.setSettings({ onboarded: true })} first />}
       {showWhatsNew && <WhatsNewModal onClose={() => api.setSettings({ whatsNewSeen: APP_MAJOR })} first />}
@@ -1234,6 +1271,8 @@ function TechPickerModal({ onClose, first }) {
 //  WHAT'S NEW (V3) + MOBILE "MORE" SHEET
 // ═══════════════════════════════════════════════════════════════════════════
 const V4_HIGHLIGHTS = [
+  ['video', 'Promo screen (4.2)', 'As soon as a customer’s ticket is running, the counter screen plays the GTS promo almost full screen — order #, name, type, what we’re doing, the clock and Done stay along the bottom. Esc minimises it.'],
+  ['harddrive', 'Hard Drive + required details (4.2)', 'New Hard Drive service type. Every ticket now has to say what was done (e.g. “Firmware update”) — it won’t save or finish without it.'],
   ['scan', 'Scan to start (4.1)', 'Hit Scan (or S) on the Mac to read a barcode with the camera; on the Windows PCs just pull the scanner trigger anywhere. Pick the type with 1–0 and the ticket starts with its clock running — edit it while it runs.'],
   ['sparkles', 'A Quick Log customers can watch', 'A live 3D stage sits next to the form: every keystroke streams into it, the order number lights up digit by digit, and saving fires a burst. Hit Customer display for full screen.'],
   ['timer', 'Service clock on every ticket', 'From the first keystroke to Done — pause, resume, edit the times. Stats shows average, median and 90th-percentile service time by type and by tech.'],
@@ -1291,6 +1330,8 @@ function ShortcutsModal({ onClose }) {
     ['N', 'New overnight assignment (intake)'],
     ['T', 'Quick log a ticket'],
     ['W', 'Add a walk-in to the queue'],
+    ['Esc', 'Promo screen: minimise (the ticket keeps running)'],
+    ['⌘ ↵', 'Promo screen: Done'],
     ['S', 'Scan a barcode (camera or scanner gun)'],
     ['1 – 0', 'In the scan window: pick the service type'],
     ['/', 'Focus the search box on the current tab'],
