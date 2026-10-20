@@ -20,6 +20,7 @@ import { webhookPayload, useStore } from './GTSApp';
 import { BrandSwatch } from './warranty-ui';
 import { PromoMedia, REPO_VIDEO, embedFor, useRepoVideo } from './PromoStage';
 import { DEFAULT_PROMO_SLIDES } from '../lib/constants';
+import { storageStatus, uploadFile } from '../lib/blob-upload';
 import { Btn, Chip, Field, Icon, Input, Panel, Segmented, Select, Textarea, Toggle } from './ui';
 
 const SECTIONS = [
@@ -81,7 +82,7 @@ function PromoPanel() {
   const [preview, setPreview] = useState(false);
   const [slides, setSlides] = useState(() => (m.promoSlides || DEFAULT_PROMO_SLIDES).join('\n'));
   const fileRef = useRef(null);
-  useEffect(() => { fetch('/api/firmware/upload', { cache: 'no-store' }).then((r) => r.json()).then(setStorage).catch(() => setStorage({ enabled: false })); }, []);
+  useEffect(() => { storageStatus().then(setStorage); }, []);
   useEffect(() => { setLink(m.promoVideoUrl || ''); }, [m.promoVideoUrl]);
   const url = (m.promoVideoUrl || '').trim();
   const source = url ? (embedFor(url) ? (/vimeo/i.test(url) ? 'Vimeo link' : 'YouTube link') : m.promoVideoName ? `Uploaded · ${m.promoVideoName}` : 'Video link') : repo ? `Repo file · ${REPO_VIDEO}` : 'Built-in animated promo (no video yet)';
@@ -91,9 +92,7 @@ function PromoPanel() {
     if (!storage?.enabled) { toast('File storage isn’t attached yet (Vercel → Storage → Blob) — paste a YouTube link for now', { tone: 'warning', duration: 8000 }); return; }
     setBusy(true); setProgress(0);
     try {
-      const { upload: put } = await import('@vercel/blob/client');
-      const safe = file.name.replace(/[^\w.\-() ]+/g, '_');
-      const blob = await put(`promo/${safe}`, file, { access: 'public', handleUploadUrl: '/api/firmware/upload', clientPayload: JSON.stringify({ key: state.settings.syncPasscode }), onUploadProgress: (p) => setProgress(Math.round(p.percentage || 0)) });
+      const blob = await uploadFile('promo', file, { passcode: state.settings.syncPasscode, onProgress: setProgress, status: storage });
       set({ promoVideoUrl: blob.url, promoVideoName: file.name }, `Promo video uploaded: ${file.name}`);
       toast('Promo video uploaded — every station plays it now', { tone: 'success' }); setPreview(true);
     } catch (e) { toast(`Upload failed: ${String(e?.message || e)}`, { tone: 'error', duration: 9000 }); }
@@ -128,7 +127,7 @@ function PromoPanel() {
             <div className={cx('promo-drop', busy && 'is-busy', !storage?.enabled && 'is-off')} onClick={() => !busy && fileRef.current?.click()}
               onDragOver={(e) => { e.preventDefault(); }} onDrop={(e) => { e.preventDefault(); upload(e.dataTransfer.files?.[0]); }}>
               <Icon name="upload" size={20} />
-              <span>{busy ? `Uploading… ${progress}%` : storage === null ? 'Checking storage…' : storage.enabled ? <><b>Upload the promo video</b> — drop it here or click (MP4 / WebM / MOV)</> : <><b>File storage isn’t attached</b> — Vercel → project → Storage → Blob, then redeploy. Or paste a link below.</>}</span>
+              <span>{busy ? `Uploading… ${progress}%` : storage === null ? 'Checking storage…' : storage.enabled ? <><b>Upload the promo video</b> — drop it here or click (MP4 / WebM / MOV)</> : <><b>File storage isn’t attached to this deployment</b> — connect a Blob store to gts-hub in Vercel, then redeploy. Or paste a link below.</>}</span>
               {busy && <i className="promo-drop-bar" style={{ width: `${progress}%` }} />}
             </div>
             <input ref={fileRef} type="file" accept="video/*" style={{ display: 'none' }} onChange={(e) => { upload(e.target.files?.[0]); e.target.value = ''; }} />
@@ -138,6 +137,8 @@ function PromoPanel() {
               {url && <Btn size="sm" variant="ghost" icon="x" onClick={() => { set({ promoVideoUrl: '', promoVideoName: '' }, 'Promo video removed'); setLink(''); }} title="Remove — falls back to the repo file or the built-in promo" aria-label="Remove video" />}
             </div>
             <div className="faint" style={{ fontSize: 11.5, marginTop: 6 }}>Also works: add the file to the repo as <code>public/promo/gts-promo.mp4</code> — it plays whenever no upload or link is set.</div>
+            {storage && <div className="faint mono" style={{ fontSize: 10.5, marginTop: 6 }}>Storage: {storage.enabled ? `connected (${storage.mode === 'oidc' ? 'Vercel sign-in' : 'token'})` : 'not detected'} · Vercel vars: {(storage.vars || []).join(', ') || 'none'}</div>}
+            <div className="faint" style={{ fontSize: 11.5, marginTop: 4 }}>Each station keeps its own copy of the video after the first play, so it only downloads once.</div>
           </div>
         </div>
         <div className="stack" style={{ gap: 10 }}>

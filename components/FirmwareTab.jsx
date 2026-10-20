@@ -173,14 +173,8 @@ function GearModal({ initial, prefill, passcode, onSave, onRemove, onClose }) {
     if (!uploads?.enabled) { setErr('File storage is not set up yet on this deployment (Vercel → Storage → Blob). Paste the download link for now.'); return; }
     setBusy(true); setProgress(0);
     try {
-      const { upload } = await import('@vercel/blob/client');
-      const safe = file.name.replace(/[^\w.\-() ]+/g, '_');
-      const blob = await upload(`firmware/${safe}`, file, {
-        access: 'public',
-        handleUploadUrl: '/api/firmware/upload',
-        clientPayload: JSON.stringify({ key: passcode }),
-        onUploadProgress: (p) => setProgress(Math.round(p.percentage || 0)),
-      });
+      const { uploadFile } = await import('../lib/blob-upload');
+      const blob = await uploadFile('firmware', file, { passcode, onProgress: setProgress, status: uploads });
       set('files', [{ name: file.name, url: blob.url, size: file.size, contentType: file.type || null, uploadedAt: new Date().toISOString() }]);
       setProgress(100);
     } catch (e) {
