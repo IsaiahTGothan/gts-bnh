@@ -1,12 +1,14 @@
 {
   "name": "gts-hub",
-  "version": "4.2.0",
+  "version": "4.3.0",
   "private": true,
-  "description": "GTS Hub — work tracking for the B&H Guest Technical Services counter (Salesforce log, overnight assignments, alerts, catalog, station).",
+  "description": "GTS Hub \u2014 work tracking for the B&H Guest Technical Services counter (Salesforce log, overnight assignments, alerts, catalog, station).",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start"
+    "start": "next start",
+    "test": "node --no-warnings --test tests/*.test.mjs",
+    "ops:fixture": "node scripts/ops-fixture.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.0",

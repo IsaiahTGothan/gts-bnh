@@ -31,6 +31,7 @@ import StationTab from './StationTab';
 import FirmwareTab from './FirmwareTab';
 import { Decode, MatrixRain } from './matrix';
 import WarrantyTab from './WarrantyTab';
+import OpsTab from './OpsTab';
 import ScanModal from './ScanModal';
 import PromoStage from './PromoStage';
 import { createWedge } from '../lib/scan';
@@ -49,6 +50,11 @@ const ACTIVITY_CAP = 400;
 function mergeById(base, changed) {
   const map = new Map(changed.map((x) => [x.id, x]));
   return base.map((x) => map.get(x.id) || x);
+}
+/** Like mergeById, but records not in `base` are added (newest first). */
+function upsertById(base, changed) {
+  const have = new Set(base.map((x) => x.id));
+  return [...changed.filter((x) => !have.has(x.id)), ...mergeById(base, changed)];
 }
 
 function useGTSStore() {
@@ -246,6 +252,23 @@ function useGTSStore() {
       if (n) mutate((p) => act({ ...p, tickets: mergeById(p.tickets, tickets), assignments: mergeById(p.assignments, assignments), queue: mergeById(p.queue || [], queue) }, 'data.purge', 'Privacy purge', `${n} record${n === 1 ? '' : 's'} anonymised (older than ${days} days)`));
       return n;
     },
+    // ── V4.3 Ops intelligence (Ops tab · lib/ops) ───────────────────────
+    //  Records are upserted by id, so re-importing the same export or result
+    //  file is a no-op apart from refreshed stamps.
+    opsImportSalesforce: (records, label) => mutate((p) => {
+      const ts = nowISO();
+      const fresh = records.map((r) => ({ ...r, updatedAt: ts }));
+      return act({ ...p, sfRecords: upsertById(p.sfRecords || [], fresh) }, 'ops.import', label || 'Salesforce export', `${fresh.length} Salesforce row${fresh.length === 1 ? '' : 's'} imported`);
+    }),
+    opsClearSalesforce: (batchId) => mutate((p) => {
+      const ts = nowISO();
+      const hit = (r) => !r.deletedAt && (!batchId || r.batchId === batchId);
+      const n = (p.sfRecords || []).filter(hit).length;
+      return act({ ...p, sfRecords: (p.sfRecords || []).map((r) => (hit(r) ? { ...r, deletedAt: ts, updatedAt: ts } : r)) }, 'ops.clear', 'Salesforce export', `${n} imported row${n === 1 ? '' : 's'} cleared`);
+    }),
+    opsSaveReview: (review, summary) => mutate((p) => act({ ...p, opsReviews: upsertById(p.opsReviews || [], [review]) }, 'ops.review', review.orderKey ? `Order ${review.orderKey}` : 'Ops review', summary || review.status)),
+    opsSetResults: (results, summary) => mutate((p) => act({ ...p, opsResults: results }, 'ops.results', 'Clawson results', summary || 'Imported')),
+    opsSaveReport: (report) => mutate((p) => act({ ...p, opsReports: upsertById(p.opsReports || [], [report]) }, 'ops.report', `EOD ${report.day}`, report.synthetic ? 'End-of-day report saved (synthetic data)' : 'End-of-day report saved')),
     updateTicket: (id, patch) => mutate((p) => ({ ...p, tickets: p.tickets.map((t) => (t.id === id ? stamp(t, patch) : t)) })),
     logTicket: (id, extra = {}) => mutate((p) => {
       const t = p.tickets.find((x) => x.id === id); if (!t) return p;
@@ -895,6 +918,7 @@ export default function GTSApp() {
               {tab === 'station' && <StationTab />}
               {tab === 'firmware' && <FirmwareTab />}
               {tab === 'warranty' && <WarrantyTab />}
+              {tab === 'ops' && <OpsTab />}
               {tab === 'management' && <ManagementTab />}
             </div>
           </main>
@@ -1006,7 +1030,7 @@ function Rail({ tech }) {
         </span>
       </button>
       <nav className="rail-nav">
-        {TABS.filter((t) => t.id !== 'warranty' || features.warranty !== false).map((t) => {
+        {TABS.filter((t) => (t.id !== 'warranty' || features.warranty !== false) && (t.id !== 'ops' || features.ops !== false)).map((t) => {
           const n = badge(t.id);
           const locked = t.manager && !isManager;
           return (

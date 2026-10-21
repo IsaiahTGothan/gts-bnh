@@ -1828,3 +1828,23 @@ body:has(.modal-wrap, .drawer) .toasts { top: 16px; bottom: auto; }
   .pbtn { height: 46px; padding: 0 14px; }
   .promo-brand small { display: none; }
 }
+
+/* ─── V4.3 Ops intelligence ─────────────────────────────────────────────── */
+.ops-banner { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg-2); font-size: 13px; }
+.ops-banner.is-synthetic { background: var(--amber-soft); border-color: rgba(245,185,66,0.45); color: var(--amber); }
+button.chip { cursor: pointer; }
+.chip.is-on { box-shadow: 0 0 0 2px currentColor inset; }
+.ops-table td { vertical-align: top; }
+.ops-issues { font-size: 12.5px; color: var(--text-2); line-height: 1.45; max-width: 420px; }
+.ops-import-result { font-size: 13px; padding: 10px 12px; border-radius: 10px; background: var(--bg-2); border: 1px solid var(--line); }
+.ops-errors { margin: 6px 0 0; padding-left: 18px; color: var(--amber); font-size: 12.5px; }
+.ops-queue { display: grid; gap: 12px; }
+.ops-card { padding: 14px 16px; border-radius: 14px; border: 1px solid var(--line); background: var(--bg-1); }
+.ops-proposal { padding: 10px 12px; border-radius: 10px; background: var(--bg-2); border: 1px dashed var(--line-2); display: grid; gap: 4px; }
+.ops-desc { white-space: pre-wrap; font-size: 13.5px; }
+.ops-blockers { color: var(--red-2); font-size: 12.5px; display: grid; gap: 2px; margin-top: 4px; }
+.ops-history { font-size: 12.5px; color: var(--text-2); }
+.ops-history summary { cursor: pointer; color: var(--text-3); }
+.ops-history > div { padding: 4px 0; border-top: 1px solid var(--line); }
+.ops-list { margin: 0; padding-left: 18px; font-size: 13px; display: grid; gap: 4px; }
+.ops-rules { display: grid; gap: 4px; font-size: 12.5px; color: var(--text-2); }

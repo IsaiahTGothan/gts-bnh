@@ -20,6 +20,25 @@ Built with Next.js (App Router) + React, a hand-rolled design system (no UI libr
 
 ## What’s new in V4
 
+* **Ops intelligence (4.3)**: a new **Ops** tab (key `0`), review-first, that never writes to Salesforce itself.
+  * **Reconcile:** import the day’s Salesforce report export (CSV or JSON). Every GTS ticket is lined up against it and gets one status: *Matched, Verified, GTS only, Salesforce only, Missing task, Incomplete* or *Conflict*.
+    * Order numbers are only ever cleaned of formatting. Leading zeros, Excel-mangled numbers (`1.09E+09`), near-identical numbers (swapped digits, an extra zero), and duplicate visits that don’t pair up go to a person instead of being merged.
+    * Customer names, emails and phones in the export are ignored on import.
+  * **Review queue:** every exception, with the proposed fix built only from what GTS recorded.
+    * Decisions are *Approve, Edit & approve* (a reason is required and before/after is kept), *Reject* and *Needs investigation*. Each one is signed and timestamped.
+    * If the ticket changes after approval, the approval is void.
+    * Approve, edit and reject need a manager.
+  * **Turnaround:** three clocks that are never blended:
+    * start → done (elapsed);
+    * hands-on (the clock minus pauses);
+    * Salesforce opened → completed.
+
+    You can filter by tech, service and status. A missing timestamp shows as *unknown*, never as an estimate.
+  * **EOD reports:** PDF (print → Save as PDF), Excel, CSV and JSON, plus a synced, searchable history.
+  * **Clawson hand-off:** download the approved fixes as a `gts-ops/v1` file. Clawson’s supervised runner works through it (dry run first, then read every write back), and its result file comes back here. A live, verified result plus a Matched re-import gives *Verified*.
+  * **Sandbox:** the whole flow on a synthetic test day (order numbers 99000…). Nothing is saved.
+
+  Contract: [`docs/ops/CONTRACT.md`](docs/ops/CONTRACT.md) · engine: `lib/ops/` · tests: `npm test`.
 * **Promo screen (4.2)** — as soon as a customer’s ticket is running (logged with the clock on, or scanned), the counter screen turns into an ad: the GTS promo video plays almost full screen (sized for the 24" iMac — about 2200×1050 of video at default scaling), with a scrolling line of services, and a dock along the bottom where you can still change the order #, customer, type and *what we’re doing*, plus the live clock, Pause and **Done** (⌘/Ctrl + Enter). Done shows a big “Thanks, Devon!” and closes. Esc minimises (the ticket keeps running); the video button on a running ticket in *Now serving* reopens it; with several customers running you can switch between them from the dock. The 3D stage pauses behind it so the GPU goes to the video. **Video:** upload it in Management → System → Promo screen (stored in Vercel Blob, plays on every station), or paste an unlisted YouTube / Vimeo / direct .mp4 link, or commit `public/promo/gts-promo.mp4`; with none of those an animated built-in promo plays, built from editable promo lines.
 * **Hard Drive** service type (4.2) — in Quick Log, scan-to-start (key `3`; the scan picker now runs `1`–`0`, `-`, `=`), stats and exports.
 * **Description required (4.2)** — a ticket can’t be logged without saying what was done (e.g. “Firmware update”, min. 3 characters): the Quick Log, the T window and scan-to-start all refuse to save without it, Done is blocked while it’s empty, and edits never save it blank. Rule lives in Management → System → Ticket rules (on by default). In scan-to-start: press the type number, type what you’re doing, Enter.
@@ -56,6 +75,7 @@ Built with Next.js (App Router) + React, a hand-rolled design system (no UI libr
 ```bash
 npm install
 npm run dev        # http://localhost:3000
+npm test           # Ops engine unit tests (synthetic data only)
 ```
 
 ## Deploy to Vercel
@@ -104,6 +124,9 @@ The **Camera Firmware Hub** (made for B&H by ZAYS.us) embedded as its own page: 
 
 ### Warranty
 Brand directory (`lib/warranty-data.js` + team overrides in the management document): official warranty and repair pages, phone, prerequisites and a QR per brand. One click logs a warranty ticket.
+
+### Ops (V4.3)
+Salesforce export ⇄ GTS reconciliation, the human review queue, turnaround analytics, end-of-day reports and the file hand-off to Clawson (see *What’s new*). Toggle: Management → System → Features → Ops tab.
 
 ### Management
 **Overview:** Team · Alerts · Daily goal · Manager PIN · Connections · Exports. **System:** Store & hours · Service clock · Ticket rules · Features · Security · Privacy · Warranty directory · Integrations · Diagnostics · Configuration. Managers see it in the rail; once a PIN is set, techs get a lock screen (auto-locks again after the idle time set in System). The PIN unlock is remembered per device.
@@ -206,6 +229,7 @@ components/
   QuickLogScene.jsx    three.js stage (lazy-loaded)
   matrix.jsx           digital rain + decode text
   WarrantyTab.jsx · warranty-ui.jsx   warranty helper (brand picker, card, QR)
+  OpsTab.jsx           Ops intelligence: reconcile · review queue · turnaround · EOD reports · Clawson hand-off
   ManagementSystem.jsx Management → System (hours, targets, rules, security, privacy, integrations…)
   AssignmentsTab.jsx   board / list / archive
   StatsTab.jsx         every number on one page
@@ -220,6 +244,9 @@ lib/
   sync.js (client) · sync-server.js (server) · realtime.js
   salesforce.js (client) · salesforce-server.js (server)
   print.js · sounds.js · catalog.js · zays-logo.js
+  ops/                 schema (gts-ops/v1) · ingest · reconcile · review · exchange · turnaround · report · fixtures
+docs/ops/              CONTRACT.md + the shared fixture Clawson tests against (npm run ops:fixture)
+tests/ops.test.mjs     node --test, synthetic data only
 ```
 
 ## Known limits
@@ -230,5 +257,6 @@ lib/
 * Local mode is per-browser; the live board needs the Supabase setup.
 * Display tags (SF-0001 / ASG-0001) are assigned on the device; two devices creating a record in the same second can end up with the same tag (ids stay unique).
 * Printing uses the browser’s print dialog.
+* **Ops** reads Salesforce only through an export a person makes. It was tested on synthetic data only, and not yet against a real B&H report: the column names are matched by common aliases, so check the *columns used* line after the first real import. Imported rows are kept 7 days (the shared document has a 2 MB limit).
 * The built-in warranty links were compiled from each manufacturer’s own US site but could not be HTTP-checked from the build environment — run **Management → System → Warranty directory → Check all links** once after deploying (some sites answer bots with 403 but open fine in a browser).
 * The 3D stage needs WebGL; without it (or with *Effects: Off*) the stage shows a 2D glow and everything else works the same.
