@@ -269,6 +269,7 @@ function FeaturesPanel() {
         <Segmented value={state.settings.effects || 'auto'} onChange={(v) => api.setSettings({ effects: v })} options={[{ id: 'auto', label: 'Auto' }, { id: 'full', label: 'Full' }, { id: 'calm', label: 'Calm' }, { id: 'off', label: 'Off' }]} />
       </Setting>
       <Setting title="Customer display button" desc="Full-screen stage for a second, customer-facing monitor.">{flag('customerDisplay', 'Customer display')}</Setting>
+      <Setting title="Ops tab" desc="Salesforce reconciliation, review queue, turnaround and end-of-day reports. Review-first — it never writes to Salesforce.">{flag('ops', 'Ops')}</Setting>
       <Setting title="Walk-in queue" desc="Queue on Quick Log; wait times in Stats.">{flag('queue', 'Walk-in queue')}</Setting>
       <Setting title="Barcode scanning" desc="Scan button (camera) and scanner-gun detection anywhere in the app.">{flag('scanner', 'Barcode scanning')}</Setting>
       <Setting title="Warranty helper" desc="Warranty tab, brand picker on warranty tickets.">{flag('warranty', 'Warranty helper')}</Setting>

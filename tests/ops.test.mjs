@@ -1,0 +1,293 @@
+// GTS Ops — unit tests (synthetic data only).  npm test
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { CONTRACT, OUTCOME, RECON, normalizeOrderNumber, nearMatch, parseWhen, validateBundle } from '../lib/ops/schema.js';
+import { gtsOrderFromTicket, gtsOrdersFromState, importSalesforce, laborMs, parseCSV } from '../lib/ops/ingest.js';
+import { reconcile, summarize } from '../lib/ops/reconcile.js';
+import { decide, reviewQueue, verificationsFromReviews } from '../lib/ops/review.js';
+import { buildFinalizationRequest, importFinalizationResult, verificationsFromResults } from '../lib/ops/exchange.js';
+import { describe as stat, turnaround } from '../lib/ops/turnaround.js';
+import { buildEodReport, compactReport, reportCSV, reportExcelXML, reportPrintHTML, searchReports } from '../lib/ops/report.js';
+import { buildSyntheticDay } from '../lib/ops/fixtures.js';
+
+const DAY = '2026-10-21';
+const AT = '2026-10-21T22:00:00.000Z';
+function setup() {
+  const f = buildSyntheticDay(DAY);
+  const sf = importSalesforce(f.sfCSV, { synthetic: true, batchId: 'b1', importedAt: AT });
+  const gts = gtsOrdersFromState({ tickets: f.tickets });
+  return { f, sf, gts, recs: reconcile(gts, sf.records) };
+}
+const byOrder = (recs, key) => recs.filter((r) => r.orderKey === key);
+
+// ─── normalisation ─────────────────────────────────────────────────────────
+test('order numbers: formatting stripped, meaning never changed', () => {
+  assert.equal(normalizeOrderNumber(' 1095-851-190 ').key, '1095851190');
+  assert.equal(normalizeOrderNumber('Order #: 1095851190').key, '1095851190');
+  assert.equal(normalizeOrderNumber('#1095851190').key, '1095851190');
+  assert.equal(normalizeOrderNumber('1095851190.0').key, '1095851190');
+  assert.equal(normalizeOrderNumber('0012345').key, '0012345', 'leading zeros kept');
+  const sci = normalizeOrderNumber('1.09585E+09');
+  assert.equal(sci.key, null); assert.ok(sci.issues.includes('excel_scientific'));
+  assert.equal(normalizeOrderNumber('').key, null);
+  assert.ok(normalizeOrderNumber('ABO123').issues.includes('ambiguous_characters'));
+  assert.equal(normalizeOrderNumber('1O95851190').key, '1O95851190', 'O is not silently turned into 0');
+  assert.ok(normalizeOrderNumber('12345', { pattern: '^\\d{10}$' }).issues.includes('pattern_mismatch'));
+  assert.equal(normalizeOrderNumber('12;34').key, null);
+});
+
+test('near-match flags typos but not neighbouring sequential orders', () => {
+  assert.equal(nearMatch('9900000017', '9900000071'), 'transposed');
+  assert.equal(nearMatch('9900000107', '9900000701'), null, 'non-adjacent swap is not a typo');
+  assert.equal(nearMatch('1234567890', '1234567809'), 'transposed');
+  assert.equal(nearMatch('9900000012', '009900000012'), 'leading_zeros');
+  assert.equal(nearMatch('9900000003', '9900000004'), null);
+  assert.equal(nearMatch('990000003', '9900000003'), 'extra_character');
+  assert.equal(nearMatch('1', '1'), null);
+});
+
+test('dates: Salesforce formats, store time zone, date-only kept as day precision', () => {
+  assert.deepEqual(parseWhen('10/21/2026 2:15 PM'), { iso: '2026-10-21T18:15:00.000Z', precision: 'minute' });
+  assert.equal(parseWhen('1/5/2026 12:05 AM').iso, '2026-01-05T05:05:00.000Z', 'EST in winter');
+  assert.equal(parseWhen('2026-10-21T14:15:00Z').iso, '2026-10-21T14:15:00.000Z');
+  assert.equal(parseWhen('10/21/2026').precision, 'day');
+  assert.equal(parseWhen('13/45/2026 1:00 PM').iso, null);
+  assert.equal(parseWhen('yesterday').issue, 'unreadable_date');
+  assert.deepEqual(parseWhen(''), { iso: null, precision: null });
+});
+
+// ─── ingestion ─────────────────────────────────────────────────────────────
+test('CSV parser handles quotes, embedded commas/newlines, BOM, CRLF, semicolons', () => {
+  assert.deepEqual(parseCSV('﻿a,b\r\n"x, y","line1\nline2"\r\n'), [['a', 'b'], ['x, y', 'line1\nline2']]);
+  assert.deepEqual(parseCSV('a;b\n1;2'), [['a', 'b'], ['1', '2']]);
+  assert.deepEqual(parseCSV('a,b\n"say ""hi""",2'), [['a', 'b'], ['say "hi"', '2']]);
+});
+
+test('Salesforce import: maps columns, drops customer PII, flags Excel damage, dedupes', () => {
+  const { sf } = setup();
+  assert.equal(sf.records.length, 12);
+  assert.deepEqual(sf.stats.dropped, ['Contact Name']);
+  assert.ok(sf.records.every((r) => !JSON.stringify(r).includes('SYNTHETIC CUSTOMER')), 'customer names never stored');
+  assert.ok(sf.records.every((r) => r.synthetic));
+  assert.equal(sf.errors.length, 1); assert.match(sf.errors[0].message, /Excel/);
+  const dup = importSalesforce('Order Number,Task ID\n123,T1\n123,T1\n');
+  assert.equal(dup.records.length, 1); assert.match(dup.errors[0].message, /Duplicate/);
+  const none = importSalesforce('Foo,Bar\n1,2');
+  assert.equal(none.records.length, 0); assert.match(none.errors[0].message, /order-number column/);
+  const report = importSalesforce('Task report\nGenerated by someone\n\nOrder Number,Subject,Status\n555,GTS,Completed\nGrand Totals (1 records)\n');
+  assert.equal(report.records.length, 1, 'finds the header under a title block and skips totals');
+  const json = importSalesforce(JSON.stringify([{ 'Order Number': '777', Subject: 'x', Status: 'Open' }]));
+  assert.equal(json.records[0].orderKey, '777'); assert.equal(json.records[0].completed, false);
+});
+
+test('labor = service clock minus pauses; unknown when the clock never stopped', () => {
+  assert.equal(laborMs({ serviceStartedAt: '2026-01-01T10:00:00Z', serviceEndedAt: '2026-01-01T10:30:00Z', servicePausedMs: 300000 }), 25 * 60000);
+  assert.equal(laborMs({ serviceStartedAt: '2026-01-01T10:00:00Z' }), null);
+  assert.equal(laborMs({}), null);
+  const g = gtsOrderFromTicket({ id: 'x', orderNumber: '12', description: 'd', createdAt: AT });
+  assert.equal(g.laborMs, null);
+});
+
+// ─── reconciliation ────────────────────────────────────────────────────────
+test('reconciliation: every outcome from the synthetic day', () => {
+  const { recs } = setup();
+  const one = (k) => { const l = byOrder(recs, k); assert.equal(l.length, 1, `exactly one record for ${k}`); return l[0]; };
+  assert.equal(one('9900000001').status, RECON.MATCHED);
+  assert.equal(one('9900000002').status, RECON.MISSING_TASK);
+  assert.ok(one('9900000002').issues.some((i) => i.code === 'claimed_pushed'));
+  assert.equal(one('9900000003').status, RECON.GTS_ONLY);
+  assert.equal(one('9900000004').status, RECON.SALESFORCE_ONLY);
+  assert.equal(one('9900000005').status, RECON.INCOMPLETE);
+  assert.equal(one('9900000006').status, RECON.INCOMPLETE);
+  assert.equal(one('9900000008').status, RECON.CONFLICT, 'two visits + two tasks on one day never auto-pair');
+  assert.equal(one('9900000008').group.gts.length, 2);
+  assert.equal(one('9900000012').status, RECON.CONFLICT, 'leading-zero difference is flagged, not merged');
+  assert.equal(one('9900000013').status, RECON.MATCHED);
+  assert.ok(one('9900000013').issues.some((i) => i.code === 'no_service_clock'));
+  const unreadable = recs.find((r) => r.sf?.taskId === 'SYN-T-0011');
+  assert.equal(unreadable.status, RECON.CONFLICT);
+  const walkup = recs.find((r) => r.gts?.tag === 'SF-9011');
+  assert.equal(walkup.status, RECON.GTS_ONLY); assert.equal(walkup.proposal, null, 'no order number → nothing to push');
+  // 9900000017 (GTS) vs 9900000071 (Salesforce): swapped digits → one CONFLICT holding both, never merged
+  const swap = one('9900000017');
+  assert.equal(swap.status, RECON.CONFLICT);
+  assert.deepEqual(swap.issues[0].candidates, ['9900000071']);
+  assert.equal(byOrder(recs, '9900000071').length, 0, 'the Salesforce side is inside the conflict, not a separate orphan');
+  const s = summarize(recs);
+  assert.equal(s.total, recs.length);
+  assert.equal(Object.values(s.counts).reduce((a, b) => a + b, 0), s.total);
+});
+
+test('reconciliation never merges: every input lands in exactly one record', () => {
+  const { recs, gts, sf } = setup();
+  const gIds = recs.flatMap((r) => (r.group ? r.group.gts : r.gts ? [r.gts] : []).map((x) => x.id));
+  const sIds = recs.flatMap((r) => (r.group ? r.group.sf : r.sf ? [r.sf] : []).map((x) => x.id));
+  assert.deepEqual([...gIds].sort(), gts.map((g) => g.id).sort());
+  assert.deepEqual([...sIds].sort(), sf.records.map((s) => s.id).sort());
+});
+
+test('same-day duplicates pair only when each side has exactly one partner', () => {
+  const t = (id, at) => gtsOrderFromTicket({ id, orderNumber: '111', description: 'work', createdAt: at, serviceStartedAt: at, serviceEndedAt: at });
+  const s = (id, d) => importSalesforce(`Order Number,Task ID,Status,Created Date,Completed Date\n111,${id},Completed,${d} 10:00 AM,${d} 10:30 AM`).records[0];
+  const recs = reconcile([t('a', '2026-10-20T14:00:00Z'), t('b', '2026-10-21T14:00:00Z')], [s('S1', '10/20/2026'), s('S2', '10/21/2026')]);
+  assert.deepEqual(recs.map((r) => r.status).sort(), [RECON.MATCHED, RECON.MATCHED]);
+  assert.deepEqual(recs.map((r) => `${r.gts.id}:${r.sf.taskId}`).sort(), ['a:S1', 'b:S2']);
+});
+
+test('timeline and Case-number contradictions are conflicts', () => {
+  const g = gtsOrderFromTicket({ id: 'g', orderNumber: '222', description: 'work', createdAt: '2026-10-21T14:00:00Z', sfCaseNumber: '0001' });
+  const s = importSalesforce('Order Number,Case Number,Task ID,Status,Completed Date\n222,0002,T,Completed,10/01/2026 10:00 AM').records[0];
+  const [r] = reconcile([g], [s]);
+  assert.equal(r.status, RECON.CONFLICT);
+  assert.deepEqual(r.issues.map((i) => i.code).filter((c) => c !== 'no_service_clock').sort(), ['case_mismatch', 'timeline']);
+});
+
+test('no order number but an exact Case number still pairs', () => {
+  const g = gtsOrderFromTicket({ id: 'g', orderNumber: '', description: 'work', createdAt: AT, sfCaseNumber: '0042' });
+  const s = importSalesforce('Order Number,Case Number,Task ID,Status\n,0042,T,Completed').records[0];
+  const [r] = reconcile([g], [s]);
+  assert.equal(r.status, RECON.MATCHED);
+});
+
+// ─── proposals & review ────────────────────────────────────────────────────
+test('proposals come only from GTS data and are blocked when the work is not done', () => {
+  const { recs } = setup();
+  const p2 = byOrder(recs, '9900000002')[0].proposal;
+  assert.equal(p2.action, 'create_task');
+  assert.equal(p2.description, 'Windows 11 setup, updates, Office sign-in.');
+  assert.equal(p2.completedAt, '2026-10-21T15:32:00.000Z');
+  assert.equal(p2.laborMinutes, 46);
+  assert.equal(byOrder(recs, '9900000005')[0].proposal.action, 'complete_task');
+  assert.equal(byOrder(recs, '9900000006')[0].proposal, null, 'running service → no proposal');
+  const noDesc = reconcile([gtsOrderFromTicket({ id: 'z', orderNumber: '333', description: '', createdAt: AT, serviceStartedAt: AT, serviceEndedAt: AT })], [])[0];
+  assert.equal(noDesc.proposal.blockers.length, 1, 'no description → blocked, never invented');
+  const noEnd = reconcile([gtsOrderFromTicket({ id: 'y', orderNumber: '334', description: 'work', createdAt: AT })], [])[0];
+  assert.equal(noEnd.proposal.completedAt, null, 'no end time → null, not a guess');
+});
+
+test('review: signed decisions, reasons required, edits keep before/after', () => {
+  const { recs } = setup();
+  const rec = byOrder(recs, '9900000002')[0];
+  assert.equal(decide(null, rec, 'approve', {}).ok, false, 'unsigned decision refused');
+  assert.equal(decide(null, rec, 'reject', { by: 'isaiah' }).ok, false, 'reject needs a reason');
+  assert.equal(decide(null, rec, 'investigate', { by: 'isaiah' }).ok, false);
+  assert.equal(decide(null, rec, 'edit', { by: 'isaiah', edits: { description: 'x' }, note: 'n' }).ok, false, 'description too short');
+  assert.equal(decide(null, rec, 'edit', { by: 'isaiah', edits: { description: 'Real work' } }).ok, false, 'edit needs a reason');
+  const e = decide(null, rec, 'edit', { by: 'isaiah', edits: { description: 'Windows 11 setup + updates.' }, note: 'typo', at: AT });
+  assert.ok(e.ok);
+  assert.equal(e.review.status, 'edited');
+  assert.equal(e.review.history[0].before.description, 'Windows 11 setup, updates, Office sign-in.');
+  assert.equal(e.review.history[0].after.description, 'Windows 11 setup + updates.');
+  const r = decide(e.review, rec, 'reject', { by: 'mike', note: 'customer declined', at: AT });
+  assert.equal(r.review.history.length, 2); assert.equal(r.review.status, 'rejected'); assert.equal(r.review.proposal, null);
+  const blocked = byOrder(recs, '9900000006')[0];
+  assert.equal(decide(null, blocked, 'approve', { by: 'isaiah' }).ok, false);
+  assert.equal(decide(null, byOrder(recs, '9900000002')[0], 'verify', { by: 'isaiah' }).ok, false, 'only Matched can be verified');
+});
+
+test('approval goes stale when the GTS ticket changes', () => {
+  const { f, sf } = setup();
+  let recs = reconcile(gtsOrdersFromState({ tickets: f.tickets }), sf.records);
+  const rec = byOrder(recs, '9900000002')[0];
+  const { review } = decide(null, rec, 'approve', { by: 'isaiah', at: AT });
+  assert.equal(reviewQueue(recs, [review]).find((q) => q.id === review.id).status, 'approved');
+  const changed = f.tickets.map((t) => (t.id === 'syn_t2' ? { ...t, description: 'Changed after approval' } : t));
+  recs = reconcile(gtsOrdersFromState({ tickets: changed }), sf.records);
+  const q = reviewQueue(recs, [review]).find((x) => x.id === review.id);
+  assert.equal(q.status, 'pending'); assert.equal(q.stale, true);
+  assert.equal(buildFinalizationRequest(reviewQueue(recs, [review]), { by: 'isaiah' }).items.length, 0, 'stale approvals never export');
+});
+
+test('human verify → VERIFIED only for that exact version', () => {
+  const { gts, sf } = setup();
+  let recs = reconcile(gts, sf.records);
+  const rec = byOrder(recs, '9900000001')[0];
+  const { review } = decide(null, rec, 'verify', { by: 'isaiah', at: AT });
+  recs = reconcile(gts, sf.records, { verifications: verificationsFromReviews([review]) });
+  assert.equal(byOrder(recs, '9900000001')[0].status, RECON.VERIFIED);
+  const edited = gts.map((g) => (g.id === 'syn_t1' ? { ...g, description: 'different' } : g));
+  recs = reconcile(edited, sf.records, { verifications: verificationsFromReviews([review]) });
+  assert.equal(byOrder(recs, '9900000001')[0].status, RECON.MATCHED);
+});
+
+// ─── exchange ──────────────────────────────────────────────────────────────
+test('finalization request: approved items only, contract-valid, matches the shared fixture', () => {
+  const { recs } = setup();
+  const reviews = reviewQueue(recs, []).filter((q) => q.canApprove).map((q) => decide(null, q.rec, 'approve', { by: 'isaiah', note: 'synthetic fixture', at: AT }).review);
+  const req = buildFinalizationRequest(reviewQueue(recs, reviews), { by: 'isaiah', at: AT });
+  assert.deepEqual(validateBundle(req, 'finalization-request'), []);
+  assert.equal(req.contract, CONTRACT);
+  assert.equal(req.rules.unix, 'never');
+  assert.ok(req.items.every((i) => i.approvals.length >= 1 && i.synthetic));
+  assert.ok(!JSON.stringify(req).toLowerCase().includes('unixloggedat'));
+  const fixture = JSON.parse(readFileSync(new URL('../docs/ops/gts-ops-v1.fixture.json', import.meta.url), 'utf8'));
+  assert.deepEqual(req, fixture.request, 'docs/ops fixture is up to date (node scripts/ops-fixture.mjs)');
+  assert.equal(buildFinalizationRequest(reviewQueue(recs, []), {}).items.length, 0, 'nothing approved → nothing exported');
+});
+
+test('result import is idempotent; dry runs and synthetic runs never verify real records', () => {
+  const fixture = JSON.parse(readFileSync(new URL('../docs/ops/gts-ops-v1.fixture.json', import.meta.url), 'utf8'));
+  const a = importFinalizationResult(fixture.result, [], { at: AT });
+  assert.ok(a.ok); assert.equal(a.added, fixture.result.items.length);
+  const b = importFinalizationResult(fixture.result, a.results, { at: AT });
+  assert.equal(b.added, 0); assert.equal(b.duplicates, fixture.result.items.length); assert.equal(b.results.length, a.results.length);
+  const dry = importFinalizationResult({ ...fixture.result, runId: 'dry1', mode: 'dry-run', items: fixture.result.items.map((i) => ({ ...i, outcome: OUTCOME.PLANNED })) }, [], {});
+  assert.equal(verificationsFromResults(dry.results).length, 0);
+  const vs = verificationsFromResults(a.results);
+  assert.ok(vs.length && vs.every((v) => v.synthetic));
+  // a synthetic verification must not verify a non-synthetic record
+  const g = gtsOrderFromTicket({ id: 'real', orderNumber: '444', description: 'work', createdAt: AT, serviceStartedAt: AT, serviceEndedAt: AT });
+  const s = importSalesforce('Order Number,Task ID,Status\n444,T,Completed').records[0];
+  const [r0] = reconcile([g], [s]);
+  const [r1] = reconcile([g], [s], { verifications: [{ gtsId: 'real', gtsFingerprint: r0.gtsFingerprint, synthetic: true }] });
+  assert.equal(r1.status, RECON.MATCHED);
+  // EOD counts results by the store's day, not UTC: 9:30 PM New York is the next day in UTC
+  const late = importFinalizationResult({ ...fixture.result, runId: 'late', finishedAt: '2026-10-22T01:30:00.000Z' }, [], {}).results;
+  const { recs } = setup();
+  assert.equal(buildEodReport({ day: '2026-10-21', records: recs, results: late, at: AT }).finalization.verified, late.length);
+  const bad = importFinalizationResult({ contract: 'nope', items: [] }, []);
+  assert.equal(bad.ok, false);
+});
+
+// ─── turnaround & report ───────────────────────────────────────────────────
+test('turnaround: elapsed vs labor kept apart, unknown counted, never estimated', () => {
+  const { recs } = setup();
+  const t = turnaround(recs, { filters: { from: DAY, to: DAY } });
+  const row = t.rows.find((r) => r.orderKey === '9900000002');
+  assert.equal(row.elapsedMs, 52 * 60000);
+  assert.equal(row.laborMs, 46 * 60000);
+  const legacy = t.rows.find((r) => r.orderKey === '9900000013');
+  assert.equal(legacy.elapsedMs, null); assert.equal(legacy.laborMs, null); assert.equal(legacy.sfElapsedMs, null, 'date-only Salesforce times → unknown');
+  assert.ok(t.elapsed.unknown > 0);
+  assert.equal(t.elapsed.n + t.elapsed.unknown, t.total);
+  assert.deepEqual(stat([null, null]), { n: 0, unknown: 2, median: null, p90: null, mean: null, min: null, max: null });
+  assert.equal(stat([1, 2, 3, 4]).median, 3);
+  assert.equal(turnaround(recs, { filters: { tech: 'mike' } }).rows.every((r) => r.tech === 'mike'), true);
+  assert.equal(turnaround(recs, { filters: { includeSynthetic: false } }).total, 0);
+});
+
+test('EOD report: all formats, synthetic labelled, history compact and searchable', () => {
+  const { recs } = setup();
+  const r = buildEodReport({ day: DAY, records: recs, queue: reviewQueue(recs, []), by: 'isaiah', at: AT });
+  assert.equal(r.kind, 'eod-report'); assert.ok(r.synthetic); assert.ok(r.allSynthetic);
+  assert.equal(r.rows.length, r.summary.total);
+  assert.equal(r.summary.total, recs.length, 'grouped conflicts (no single side) still land on their day');
+  assert.ok(r.exceptions.some((e) => e.orderNumber === '9900000008'), 'duplicate-order conflict is in the exceptions');
+  assert.equal(r.exceptions.length, r.summary.exceptions);
+  const csv = reportCSV(r);
+  assert.ok(csv.startsWith('﻿Status,Order'));
+  assert.equal(csv.trim().split('\r\n').length, r.rows.length + 1);
+  assert.match(reportExcelXML(r), /<Worksheet ss:Name="Exceptions">/);
+  assert.match(reportExcelXML(r), /SYNTHETIC/);
+  assert.match(reportPrintHTML(r), /SYNTHETIC TEST DATA/);
+  const c = compactReport(r);
+  assert.equal(c.rows, undefined); assert.equal(c.rowCount, r.rows.length);
+  assert.equal(searchReports([c], '9900000002').length, 1);
+  assert.equal(searchReports([c], 'zzz-not-there').length, 0);
+});
+
+test('CSV export neutralises spreadsheet formulas', () => {
+  const csv = reportCSV({ rows: [{ status: '=HYPERLINK("x")', orderNumber: '+1', issues: '@SUM(A1)' }] });
+  assert.ok(!/(^|,)=HYPERLINK/.test(csv)); assert.ok(csv.includes(`"'=HYPERLINK(""x"")"`));
+});
