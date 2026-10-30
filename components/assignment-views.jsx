@@ -13,13 +13,15 @@ import { claimTicketHTML, intakeTagHTML, printHTML } from '../lib/print';
 import { computePriority, copyText, cx, effectivePriority, fmtDateTime, fmtElapsedLong, fmtTime, formatPhone, isValidEmail, isValidPhone, relTime, smsHref, telHref } from '../lib/utils';
 import { checkOrder } from '../lib/service';
 import { useStore } from './GTSApp';
+import ServiceInput, { useServiceCatalog } from './ServiceInput';
+import { inferFromDescription, sameFamily, topServices } from '../lib/sf-services';
 import { WarrantyPicker } from './warranty-ui';
 import { AgeBadge, Avatar, Btn, CheckPills, Checkbox, Chip, Drawer, Field, Icon, Input, Modal, PriorityChip, Segmented, Select, ServiceIcon, StatusChip, TechSelect, Textarea, Toggle, TypePicker } from './ui';
 
 // ═══════════════════════════════════════════════════════════════════════════
 //  TICKET (Salesforce tab)
 // ═══════════════════════════════════════════════════════════════════════════
-const EMPTY_TICKET = { orderNumber: '', customerName: '', serviceType: null, description: '', warrantyBrand: null, serial: '', queueId: null };
+const EMPTY_TICKET = { orderNumber: '', customerName: '', serviceType: null, description: '', sfService: null, warrantyBrand: null, serial: '', queueId: null };
 
 export function useTicketDraft(prefill) {
   const { state } = useStore();
@@ -27,7 +29,22 @@ export function useTicketDraft(prefill) {
   const clockDefault = m.serviceClock === 'done' ? 'done' : 'start';
   const [d, setD] = useState(() => ({ ...EMPTY_TICKET, tech: state.settings.currentTech, clock: clockDefault, ...(prefill || {}) }));
   const [attempted, setAttempted] = useState(false);
+  const catalog = useServiceCatalog();
+  // V4.4: the service type follows the description until someone taps a type themselves
+  const manualType = useRef(!!prefill?.serviceType);
   const set = (k, v) => setD((x) => ({ ...x, [k]: v }));
+  const setType = (v) => { manualType.current = !!v; setD((x) => ({ ...x, serviceType: v })); };
+  const setDesc = (text) => setD((x) => {
+    const inf = inferFromDescription(text, { catalog, type: x.serviceType });
+    const next = { ...x, description: text, sfService: inf.service?.path || null };
+    if (!manualType.current) next.serviceType = inf.type || null;
+    return next;
+  });
+  const pickService = (svc) => setD((x) => {
+    const next = { ...x, description: svc.name, sfService: svc.path };
+    if (svc.type && !sameFamily(x.serviceType, svc.type) && (x.serviceType !== 'warranty')) next.serviceType = svc.type;
+    return next;
+  });
   const load = (obj) => setD((x) => ({ ...x, ...obj }));
   // follow the signed-in tech if it changes while the form is open
   const currentTech = state.settings.currentTech;
@@ -49,20 +66,22 @@ export function useTicketDraft(prefill) {
     const win = (Number(m.duplicateWindowHours) || 24) * 3_600_000;
     return state.tickets.find((t) => !t.deletedAt && t.orderNumber === o && Date.now() - new Date(t.createdAt).getTime() < win && t.id !== prefill?.id) || null;
   }, [d.orderNumber, state.tickets, m.duplicateWindowHours, prefill?.id]);
-  const reset = () => { setD({ ...EMPTY_TICKET, tech: state.settings.currentTech, clock: clockDefault }); setAttempted(false); };
-  return { d, set, load, errors, valid, isBlank, reset, order, dupe, problems, needDesc, attempt: () => setAttempted(true) };
+  const reset = () => { setD({ ...EMPTY_TICKET, tech: state.settings.currentTech, clock: clockDefault }); setAttempted(false); manualType.current = false; };
+  return { d, set, setType, setDesc, pickService, load, errors, valid, isBlank, reset, order, dupe, problems, needDesc, attempt: () => setAttempted(true) };
 }
 
 /** Shared fields — used by the Quick Log stage, the T modal and the edit modal. */
 export function TicketFields({ draft, autoFocus, compactTypes, showClock = true, orderRef, onScan }) {
   const { state, openTicket } = useStore();
-  const { d, set, errors, isBlank, order, dupe, needDesc } = draft;
+  const { d, set, setType, setDesc, pickService, errors, isBlank, order, dupe, needDesc } = draft;
   const m = state.management || {};
   const localRef = useRef(null);
   const ref = orderRef || localRef;
   useEffect(() => { if (autoFocus) ref.current?.focus(); }, [autoFocus]); // eslint-disable-line react-hooks/exhaustive-deps
   const digitsTyped = d.orderNumber.replace(/\D/g, '').length;
-  const templates = (m.templates || []).filter(Boolean);
+  const catalog = useServiceCatalog();
+  const quick = useMemo(() => topServices(state.tickets, { catalog, limit: 6 }), [state.tickets, catalog]);
+  const descRef = useRef(null);
   const warrantyOn = d.serviceType === 'warranty' && m.features?.warranty !== false;
   const nextField = (e) => { if (e.key === 'Enter' && !e.metaKey && !e.ctrlKey) { e.preventDefault(); const f = e.currentTarget.closest('.form-grid')?.querySelectorAll('input, textarea'); if (!f) return; const i = [...f].indexOf(e.currentTarget); f[i + 1]?.focus(); } };
   return (
@@ -72,7 +91,7 @@ export function TicketFields({ draft, autoFocus, compactTypes, showClock = true,
         <div className="order-wrap">
           <Input ref={ref} className={cx('mono input-lg order-input', order === 'ok' && digitsTyped >= 6 && 'is-good', order === 'bad' && m.orderCheck !== 'off' && 'is-warn')} inputMode="numeric" autoComplete="off" placeholder="e.g. 1095847721" value={d.orderNumber}
             onChange={(e) => set('orderNumber', e.target.value.replace(/[^\d\w-]/g, ''))} onKeyDown={nextField} />
-          <span className="order-count mono" aria-hidden="true">{order === 'ok' && digitsTyped >= 6 ? <Icon name="check" size={13} /> : digitsTyped ? `${digitsTyped}` : ''}</span>
+          {(digitsTyped > 0) && <span className={cx('order-count mono', order === 'ok' && digitsTyped >= 6 && 'is-good')} aria-hidden="true">{order === 'ok' && digitsTyped >= 6 ? <Icon name="check" size={13} /> : digitsTyped}</span>}
           {onScan && <button type="button" className="order-scan" onClick={onScan} title="Scan the barcode instead (S)" aria-label="Scan a barcode"><Icon name="scan" size={16} /></button>}
         </div>
         {dupe && <span className="field-hint is-warn"><Icon name="alert-triangle" size={11} /> Already logged as <button type="button" className="linkish" onClick={() => openTicket(dupe.id)}>{dupe.tag}</button> {relTime(dupe.createdAt)} — same customer?</span>}
@@ -81,7 +100,7 @@ export function TicketFields({ draft, autoFocus, compactTypes, showClock = true,
         <Input className="input-lg" placeholder="Walk-up if unknown" autoComplete="off" value={d.customerName} onChange={(e) => set('customerName', e.target.value)} onKeyDown={nextField} />
       </Field>
       <Field group label="Type of service" optional={!isBlank && !m.requireServiceType} required={!!m.requireServiceType} error={errors.serviceType} className="span-2">
-        <TypePicker value={d.serviceType} onChange={(v) => set('serviceType', v)} compact={compactTypes} />
+        <TypePicker value={d.serviceType} onChange={setType} compact={compactTypes} />
       </Field>
       {warrantyOn && (
         <Field group label="Warranty — which brand?" optional hint="Opens the manufacturer’s official page; the customer can scan the QR." className="span-2">
@@ -93,11 +112,13 @@ export function TicketFields({ draft, autoFocus, compactTypes, showClock = true,
           <Input className="mono" autoComplete="off" placeholder="On the device or box" value={d.serial || ''} onChange={(e) => set('serial', e.target.value)} />
         </Field>
       )}
-      <Field group label="Description" required={needDesc} optional={!needDesc && !isBlank} error={errors.description} hint={needDesc ? 'Required — what was done or requested. Tap a template below to fill it fast.' : isBlank ? 'No order # or name — describe the service so the ticket means something later.' : 'What was done or requested.'} className="span-2">
-        <Textarea invalid={!!errors.description} placeholder="e.g. Firmware update Sony A7R V 2.00 → 3.01 via card; paired with iPhone." value={d.description} onChange={(e) => set('description', e.target.value)} rows={2} />
-        {templates.length > 0 && (
+      <Field group label="Service" required={needDesc} optional={!needDesc && !isBlank} error={errors.description} className="span-2"
+        hint={d.sfService ? <>Salesforce: <b>{d.sfService}</b></> : d.description.trim().length >= 3 ? 'Not on the Salesforce list — it will be saved as typed.' : 'Type to search the Salesforce services — e.g. “kit”, “secure data drop off”, “sim”.'}>
+        <ServiceInput ref={descRef} value={d.description} onChange={setDesc} onPick={pickService} type={d.serviceType} invalid={!!errors.description}
+          onEnter={(e) => { if (!e.defaultPrevented) { const f = e.currentTarget.closest('.form-grid')?.querySelectorAll('input, textarea'); if (f) { const i = [...f].indexOf(e.currentTarget); f[i + 1]?.focus(); } } }} />
+        {quick.length > 0 && (
           <span className="templates">
-            {templates.slice(0, 8).map((tpl) => <button type="button" key={tpl} className="tpl" onClick={() => set('description', d.description.trim() ? `${d.description.trim()} · ${tpl}` : tpl)} title="Add to the description">{tpl}</button>)}
+            {quick.map((q) => <button type="button" key={q.id} className={cx('tpl', d.sfService === q.path && 'is-on')} onClick={() => { pickService(q); descRef.current?.focus(); }} title={q.path}>{q.name}</button>)}
           </span>
         )}
       </Field>

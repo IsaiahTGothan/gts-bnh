@@ -24,7 +24,7 @@ import { Avatar, Btn, Chip, ConfirmDialog, GTSLogo, GTSMark, Icon, Kbd, Modal, R
 import HomeTab from './HomeTab';
 import StatsTab from './StatsTab';
 import ManagementTab from './ManagementTab';
-import SalesforceTab from './SalesforceTab';
+import SalesforceTab, { QuickLogWindow } from './SalesforceTab';
 import AssignmentsTab from './AssignmentsTab';
 import CatalogTab from './CatalogTab';
 import StationTab from './StationTab';
@@ -32,10 +32,11 @@ import FirmwareTab from './FirmwareTab';
 import { Decode, MatrixRain } from './matrix';
 import WarrantyTab from './WarrantyTab';
 import OpsTab from './OpsTab';
+import { inferFromDescription, serviceCatalog } from '../lib/sf-services';
 import ScanModal from './ScanModal';
 import PromoStage from './PromoStage';
 import { createWedge } from '../lib/scan';
-import { AssignmentDrawer, AssignmentForm, TicketForm } from './assignment-views';
+import { AssignmentDrawer, AssignmentForm } from './assignment-views';
 
 // ─── Context ───────────────────────────────────────────────────────────────
 const StoreContext = createContext(null);
@@ -47,6 +48,16 @@ const ACTIVITY_CAP = 400;
 //  STORE HOOK — every mutation goes through here so it can stamp
 //  updatedAt, attribute the tech and append to the activity feed.
 // ═══════════════════════════════════════════════════════════════════════════
+/** Description edited → refresh its Salesforce service path (and fill an empty type from it). */
+function withServicePath(t, patch, management) {
+  if (patch.description === undefined || patch.sfService !== undefined) return patch;
+  const type = patch.serviceType !== undefined ? patch.serviceType : t.serviceType;
+  const inf = inferFromDescription(patch.description, { catalog: serviceCatalog(management?.customServices), type });
+  const out = { ...patch, sfService: inf.service?.path || null };
+  if (!type && inf.type) out.serviceType = inf.type;
+  return out;
+}
+
 function mergeById(base, changed) {
   const map = new Map(changed.map((x) => [x.id, x]));
   return base.map((x) => map.get(x.id) || x);
@@ -79,12 +90,23 @@ function useGTSStore() {
   // load once on mount (client only)
   useEffect(() => { setState(loadState()); }, []);
 
-  // persist (debounced)
+  // persist (debounced, then in idle time so a big history never stutters typing / saving)
+  const pendingSave = useRef(null);
   useEffect(() => {
-    if (!state) return;
-    const t = setTimeout(() => saveState(state), 250);
-    return () => clearTimeout(t);
+    if (!state) return undefined;
+    pendingSave.current = state;
+    const idle = typeof window !== 'undefined' && window.requestIdleCallback;
+    let h = 0;
+    const t = setTimeout(() => { h = idle ? idle(() => { saveState(state); pendingSave.current = null; }, { timeout: 1500 }) : (saveState(state), 0); }, 250);
+    return () => { clearTimeout(t); if (h && window.cancelIdleCallback) window.cancelIdleCallback(h); };
   }, [state]);
+  // never lose the last edit when the tab closes or the Mac sleeps
+  useEffect(() => {
+    const flush = () => { if (pendingSave.current) { saveState(pendingSave.current); pendingSave.current = null; } };
+    window.addEventListener('pagehide', flush);
+    document.addEventListener('visibilitychange', flush);
+    return () => { window.removeEventListener('pagehide', flush); document.removeEventListener('visibilitychange', flush); };
+  }, []);
 
   // theme
   useEffect(() => {
@@ -133,10 +155,15 @@ function useGTSStore() {
       // Management rule: every ticket says what was done (the forms check first; this is the backstop).
       if (cur.management?.requireDescription !== false && String(data.description || '').trim().length < 3) throw new Error('A description of the service is required.');
       const ts = nowISO();
+      // V4.4: the description is a Salesforce service name → keep its path, and pick the type from it
+      // (nothing matched and no type picked → Other)
+      const desc = (data.description || '').trim();
+      const inferred = inferFromDescription(desc, { catalog: serviceCatalog(cur.management?.customServices), type: data.serviceType || null });
       const created = {
         id: uid('tk'), kind: 'sf', tag: nextTag(cur.tickets, 'SF'),
         orderNumber: (data.orderNumber || '').trim(), customerName: (data.customerName || '').trim(),
-        serviceType: data.serviceType || null, description: (data.description || '').trim(),
+        serviceType: data.serviceType || inferred.type || (desc ? 'other' : null), description: desc,
+        sfService: data.sfService || inferred.service?.path || null,
         tech: data.tech === undefined ? cur.settings.currentTech : data.tech,
         status: 'open', createdAt: ts, updatedAt: ts,
         logSeconds: Number.isFinite(data.logSeconds) && data.logSeconds > 0 ? Math.round(data.logSeconds * 10) / 10 : null,
@@ -269,7 +296,13 @@ function useGTSStore() {
     opsSaveReview: (review, summary) => mutate((p) => act({ ...p, opsReviews: upsertById(p.opsReviews || [], [review]) }, 'ops.review', review.orderKey ? `Order ${review.orderKey}` : 'Ops review', summary || review.status)),
     opsSetResults: (results, summary) => mutate((p) => act({ ...p, opsResults: results }, 'ops.results', 'Clawson results', summary || 'Imported')),
     opsSaveReport: (report) => mutate((p) => act({ ...p, opsReports: upsertById(p.opsReports || [], [report]) }, 'ops.report', `EOD ${report.day}`, report.synthetic ? 'End-of-day report saved (synthetic data)' : 'End-of-day report saved')),
-    updateTicket: (id, patch) => mutate((p) => ({ ...p, tickets: p.tickets.map((t) => (t.id === id ? stamp(t, patch) : t)) })),
+    // V4.4: re-sort old Other / untyped tickets in one go (Management → System → Services)
+    retypeTickets: (changes) => mutate((p) => {
+      const by = new Map(changes.map((c) => [c.id, c]));
+      const tickets = p.tickets.map((t) => { const c = by.get(t.id); return c ? stamp(t, { serviceType: c.type, ...(c.sfService !== undefined ? { sfService: c.sfService } : {}) }) : t; });
+      return act({ ...p, tickets }, 'ticket.retype', 'Service types', `${changes.length} ticket${changes.length === 1 ? '' : 's'} re-sorted from Other / no type`);
+    }),
+    updateTicket: (id, patch) => mutate((p) => ({ ...p, tickets: p.tickets.map((t) => (t.id === id ? stamp(t, withServicePath(t, patch, p.management)) : t)) })),
     logTicket: (id, extra = {}) => mutate((p) => {
       const t = p.tickets.find((x) => x.id === id); if (!t) return p;
       const next = { ...p, tickets: p.tickets.map((x) => (x.id === id ? stamp(x, { status: 'logged', loggedAt: nowISO(), loggedBy: p.settings.currentTech, ...extra }) : x)) };
@@ -944,10 +977,11 @@ export default function GTSApp() {
         />
       )}
       {modal?.type === 'ticket' && (
-        <TicketForm prefill={modal.props?.prefill} onClose={closeModal}
-          onSave={(data) => {
-            let t; try { t = api.addTicket(data); } catch (e) { toast(e.message, { tone: 'warning' }); return; }
-            closeModal(); sfx('success'); toast(`${t.tag} logged${t.logSeconds ? ` in ${t.logSeconds}s` : ''}`, { tone: 'success' }); setTab('salesforce');
+        <QuickLogWindow prefill={modal.props?.prefill} onClose={closeModal}
+          onConvert={(t) => newAssignment({ customerName: t.customerName, orderNumber: t.orderNumber, serviceType: t.serviceType, issue: t.description, tech: t.tech }, t.id)}
+          onUnix={(t) => openUnixScan(t.id)}
+          onSaved={(t) => {
+            closeModal(); setTab('salesforce');
             if (t.serviceStartedAt && !t.serviceEndedAt) setTimeout(() => window.dispatchEvent(new CustomEvent('gts:promo-open', { detail: { id: t.id } })), 120);
           }} />
       )}

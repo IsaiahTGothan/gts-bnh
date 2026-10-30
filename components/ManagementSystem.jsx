@@ -8,7 +8,8 @@
 //  All of it lives in the shared `management` document, so it syncs.
 // ═══════════════════════════════════════════════════════════════════════════
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { APP_VERSION, DEFAULT_HOURS, DEFAULT_MANAGEMENT, SERVICE_TYPES, WEEKDAYS, techName } from '../lib/constants';
+import { APP_VERSION, DEFAULT_HOURS, DEFAULT_MANAGEMENT, PICK_TYPES, SERVICE_BY_ID, SERVICE_TYPES, WEEKDAYS, techName } from '../lib/constants';
+import { SF_GROUPS, SF_SERVICES, classifyText, inferFromDescription, serviceCatalog } from '../lib/sf-services';
 import { headers } from '../lib/sync';
 import { checkOrder } from '../lib/service';
 import { handoffMarkdown } from '../lib/handoff';
@@ -24,7 +25,7 @@ import { storageStatus, uploadFile } from '../lib/blob-upload';
 import { Btn, Chip, Field, Icon, Input, Panel, Segmented, Select, Textarea, Toggle } from './ui';
 
 const SECTIONS = [
-  ['promo', 'Promo screen', 'video'], ['hours', 'Store & hours', 'clock'], ['service', 'Service clock', 'timer'], ['rules', 'Ticket rules', 'clipboard'], ['features', 'Features', 'sparkles'],
+  ['promo', 'Promo screen', 'video'], ['hours', 'Store & hours', 'clock'], ['service', 'Service clock', 'timer'], ['rules', 'Ticket rules', 'clipboard'], ['services', 'Services', 'list'], ['features', 'Features', 'sparkles'],
   ['security', 'Security', 'lock'], ['privacy', 'Privacy', 'shield'], ['warranty', 'Warranty directory', 'shield-check'], ['integrations', 'Integrations', 'layers'],
   ['diagnostics', 'Diagnostics', 'server'], ['config', 'Configuration', 'code'],
 ];
@@ -60,6 +61,7 @@ export default function ManagementSystem() {
         <SecurityPanel />
         <PrivacyPanel />
       </div>
+      <ServicesPanel />
       <WarrantyDirectoryPanel />
       <div className="grid cols-2 sys-grid">
         <IntegrationsPanel />
@@ -67,6 +69,88 @@ export default function ManagementSystem() {
       </div>
       <ConfigPanel />
     </div>
+  );
+}
+
+// ─── Services: the Salesforce list, team additions, re-sorting Other ───────
+function ServicesPanel() {
+  const { m, set, state, api, toast } = useMgmt();
+  const custom = m.customServices || [];
+  const catalog = useMemo(() => serviceCatalog(custom), [custom]);
+  const [showList, setShowList] = useState(false);
+  // every live ticket filed as Other, with no type, or under the retired Monitors chip
+  const candidates = useMemo(() => state.tickets
+    .filter((t) => !t.deletedAt && (t.kind || 'sf') === 'sf' && (!t.serviceType || t.serviceType === 'other' || SERVICE_BY_ID[t.serviceType]?.legacy))
+    .map((t) => {
+      const inf = inferFromDescription(t.description || '', { catalog });
+      const type = inf.type || classifyText(`${t.description || ''} ${t.warrantyBrand || ''}`);
+      return { t, type: type && type !== t.serviceType ? type : null, sfService: inf.service?.path || null };
+    }), [state.tickets, catalog]);
+  const [pick, setPick] = useState({}); // id → type override ('' = leave as is)
+  const typeFor = (c) => (pick[c.t.id] !== undefined ? pick[c.t.id] : c.type || '');
+  const changes = candidates.filter((c) => typeFor(c) && typeFor(c) !== c.t.serviceType);
+  // what the "Other" pile really is, biggest first
+  const groups = useMemo(() => {
+    const g = {};
+    for (const c of candidates) { const k = typeFor(c) || 'unsorted'; g[k] = (g[k] || 0) + 1; }
+    return Object.entries(g).sort((a, b) => b[1] - a[1]);
+  }, [candidates, pick]); // eslint-disable-line react-hooks/exhaustive-deps
+  const apply = () => {
+    api.retypeTickets(changes.map((c) => ({ id: c.t.id, type: typeFor(c), ...(c.sfService ? { sfService: c.sfService } : {}) })));
+    toast(`${changes.length} ticket${changes.length === 1 ? '' : 's'} re-sorted`, { tone: 'success' });
+    setPick({});
+  };
+  const removeCustom = (i) => set({ customServices: custom.filter((_, k) => k !== i) }, `Removed team service “${custom[i].name}”`);
+  const retypeCustom = (i, type) => set({ customServices: custom.map((c, k) => (k === i ? { ...c, type: type || null } : c)) });
+  return (
+    <Panel id="sys-services" title="Services" icon="list" sub={`${SF_SERVICES.length} verified Salesforce services in ${SF_GROUPS.length} groups${custom.length ? ` + ${custom.length} team-added` : ''}. The description is the service name; the type is picked from it.`}
+      actions={<Btn size="sm" variant="ghost" icon={showList ? 'chevron-down' : 'chevron-right'} onClick={() => setShowList((v) => !v)}>{showList ? 'Hide list' : 'Show list'}</Btn>}>
+      {showList && (
+        <div className="svc-groups mb-3">
+          {SF_GROUPS.map((g) => (
+            <div key={g} className="svc-group-card"><b>{g}</b>{SF_SERVICES.filter((x) => x.group === g).map((x) => <span key={x.id} style={{ '--c': SERVICE_BY_ID[x.type]?.color || 'var(--text-3)' }}><Icon name={SERVICE_BY_ID[x.type]?.icon || 'dots'} size={11} />{x.name}</span>)}</div>
+          ))}
+        </div>
+      )}
+      <div className="setting-title">Team-added services <span className="faint" style={{ fontWeight: 400 }}>· not verified in Salesforce — add them from the service box (“Add … to the service list”)</span></div>
+      {custom.length ? (
+        <div className="tpl-edit mb-3">
+          {custom.map((c, i) => (
+            <span key={`${c.name}-${i}`} className="tpl-chip">{c.name}
+              <select className="mini-select" value={c.type || ''} onChange={(e) => retypeCustom(i, e.target.value)} aria-label={`Type for ${c.name}`}><option value="">auto</option>{PICK_TYPES.map((x) => <option key={x.id} value={x.id}>{x.label}</option>)}</select>
+              <button type="button" onClick={() => removeCustom(i)} aria-label={`Remove ${c.name}`}><Icon name="x" size={11} /></button></span>
+          ))}
+        </div>
+      ) : <div className="faint mb-3" style={{ fontSize: 13 }}>None yet.</div>}
+
+      <div className="setting-title">Re-sort Other <span className="faint" style={{ fontWeight: 400 }}>· {candidates.length} ticket{candidates.length === 1 ? '' : 's'} filed as Other, with no type, or as Monitors</span></div>
+      {candidates.length ? (
+        <>
+          <div className="row wrap mb-2" style={{ gap: 6 }}>
+            {groups.map(([k, n]) => <Chip key={k} size="sm" tone={k === 'unsorted' ? undefined : 'accent'}>{k === 'unsorted' ? 'Stays Other' : SERVICE_BY_ID[k]?.label || k} · {n}</Chip>)}
+          </div>
+          <div className="table-wrap resort-table">
+            <table className="table">
+              <thead><tr><th>Ticket</th><th>Description</th><th>Now</th><th>Move to</th></tr></thead>
+              <tbody>
+                {candidates.slice().sort((a, b) => (typeFor(b) ? 1 : 0) - (typeFor(a) ? 1 : 0) || String(typeFor(a)).localeCompare(String(typeFor(b)))).map((c) => (
+                  <tr key={c.t.id}>
+                    <td className="mono">{c.t.tag}<div className="faint" style={{ fontSize: 11 }}>{fmtDateTime(c.t.createdAt)}</div></td>
+                    <td style={{ maxWidth: 420 }}>{c.t.description || <span className="faint">—</span>}{c.sfService && <div className="faint" style={{ fontSize: 11 }}>{c.sfService}</div>}</td>
+                    <td>{c.t.serviceType ? SERVICE_BY_ID[c.t.serviceType]?.label : <span className="faint">none</span>}</td>
+                    <td><Select value={typeFor(c)} onChange={(e) => setPick((x) => ({ ...x, [c.t.id]: e.target.value }))} style={{ width: 150 }}><option value="">Leave as is</option>{PICK_TYPES.map((x) => <option key={x.id} value={x.id}>{x.label}</option>)}</Select></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="row wrap mt-3" style={{ gap: 8 }}>
+            <Btn variant="primary" icon="check" disabled={!changes.length} onClick={apply}>Apply {changes.length} change{changes.length === 1 ? '' : 's'}</Btn>
+            <span className="faint" style={{ fontSize: 12 }}>Suggestions come from each ticket’s own description. Nothing changes until you apply; every change is stamped in Activity.</span>
+          </div>
+        </>
+      ) : <div className="faint" style={{ fontSize: 13 }}>Nothing to sort — every ticket has a real type.</div>}
+    </Panel>
   );
 }
 
@@ -217,9 +301,7 @@ function ServicePanel() {
 function RulesPanel() {
   const { m, set } = useMgmt();
   const [test, setTest] = useState('1095847721');
-  const [tpl, setTpl] = useState('');
   let patternOk = true; try { new RegExp(m.orderPattern || ''); } catch { patternOk = false; }
-  const templates = m.templates || [];
   return (
     <Panel id="sys-rules" title="Ticket rules" icon="clipboard" sub="What a valid Quick Log ticket looks like at this counter.">
       <Setting title="Description required" desc="Every ticket must say what was done (e.g. “Firmware update”) — it won’t save or finish without it."><Toggle on={m.requireDescription !== false} onChange={(v) => set({ requireDescription: v }, `Description ${v ? 'required' : 'optional'}`)} label="Description required" /></Setting>
@@ -239,16 +321,9 @@ function RulesPanel() {
       <Setting title="Duplicate warning" desc="Warn when the same order # was logged within…">
         <Select value={m.duplicateWindowHours ?? 24} onChange={(e) => set({ duplicateWindowHours: Number(e.target.value) })} style={{ width: 120 }}>{[1, 4, 8, 24, 48, 168].map((n) => <option key={n} value={n}>{n < 24 ? `${n} h` : n === 168 ? '1 week' : `${n / 24} day${n > 24 ? 's' : ''}`}</option>)}</Select>
       </Setting>
-      <div className="setting-title" style={{ marginTop: 10 }}>Description templates <span className="faint" style={{ fontWeight: 400 }}>· one tap under the description</span></div>
-      <div className="tpl-edit">
-        {templates.map((t, i) => (
-          <span key={`${t}-${i}`} className="tpl-chip">{t}<button type="button" onClick={() => set({ templates: templates.filter((_, k) => k !== i) })} aria-label={`Remove ${t}`}><Icon name="x" size={11} /></button></span>
-        ))}
-        <span className="row" style={{ gap: 6, width: '100%' }}>
-          <Input placeholder="Add a template…" value={tpl} onChange={(e) => setTpl(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && tpl.trim()) { set({ templates: [...templates, tpl.trim()] }); setTpl(''); } }} />
-          <Btn size="sm" icon="plus" disabled={!tpl.trim()} onClick={() => { set({ templates: [...templates, tpl.trim()] }); setTpl(''); }}>Add</Btn>
-        </span>
-      </div>
+      <Setting title="Service list" desc="Descriptions come from the verified Salesforce service list — search it while logging. Team-added services and the Other re-sort live in Services below.">
+        <Btn size="sm" variant="ghost" icon="arrow-right" onClick={() => document.getElementById('sys-services')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>Services</Btn>
+      </Setting>
     </Panel>
   );
 }

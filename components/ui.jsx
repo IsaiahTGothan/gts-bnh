@@ -6,7 +6,7 @@
 // ═══════════════════════════════════════════════════════════════════════════
 import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ASG_STATUS_BY_ID, PRIORITY_BY_ID, SERVICE_TYPES, TECH_BY_ID, TICKET_STATUSES } from '../lib/constants';
+import { ASG_STATUS_BY_ID, PICK_TYPES, PRIORITY_BY_ID, SERVICE_TYPES, TECH_BY_ID, TICKET_STATUSES } from '../lib/constants';
 import { ageLevel, cx, fmtElapsedLong } from '../lib/utils';
 import { ZAYS_PATH, ZAYS_VIEWBOX } from '../lib/zays-logo';
 
@@ -47,6 +47,7 @@ const ICONS = {
   tag: '<path d="M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0L2 12V2h10l8.6 8.6a2 2 0 0 1 0 2.8z"/><circle cx="7" cy="7" r="1.5"/>',
   camera: '<path d="M3 8a2 2 0 0 1 2-2h2l2-3h6l2 3h2a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><circle cx="12" cy="13" r="4"/>',
   desktop: '<rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/>',
+  headphones: '<path d="M3 18v-6a9 9 0 0 1 18 0v6"/><path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z"/>',
   monitor: '<rect x="2" y="4" width="20" height="13" rx="2"/><path d="M12 17v4M7 21h10M6 8h6"/>',
   laptop: '<rect x="3" y="4" width="18" height="12" rx="2"/><path d="M2 20h20"/>',
   tablet: '<rect x="4" y="2" width="16" height="20" rx="2"/><path d="M12 18h.01"/>',
@@ -391,14 +392,14 @@ export function TypePicker({ value, onChange, compact }) {
     return (
       <Select value={value || ''} onChange={(e) => onChange(e.target.value || null)}>
         <option value="">Select service type…</option>
-        {SERVICE_TYPES.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
+        {PICK_TYPES.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
       </Select>
     );
   }
   return (
     <div className="typegrid" role="radiogroup">
-      {SERVICE_TYPES.map((s) => (
-        <button key={s.id} type="button" role="radio" aria-checked={value === s.id} className={cx('typebtn', value === s.id && 'is-on')} onClick={() => onChange(value === s.id ? null : s.id)} title={s.label}>
+      {PICK_TYPES.map((s) => (
+        <button key={s.id} type="button" role="radio" aria-checked={value === s.id} className={cx('typebtn', value === s.id && 'is-on')} style={{ '--c': s.color }} onClick={() => onChange(value === s.id ? null : s.id)} title={s.label}>
           <Icon name={s.icon} />
           <span className="truncate" style={{ maxWidth: '100%' }}>{s.label}</span>
         </button>
@@ -429,9 +430,30 @@ function useLockScroll() {
  * transformed ancestor turns position: fixed into "fixed to that ancestor" — the
  * modal would land at the top of the page, off-centre, with its footer cut off.
  */
-function Portal({ children }) {
+export function Portal({ children }) {
+  const root = useOverlayRoot();
+  if (!root) return null;
+  return createPortal(children, root);
+}
+
+/**
+ * Where overlays go: <body>, or the element that is full screen right now — in
+ * full screen only that element is painted, so anything portalled to <body>
+ * (the promo screen, modals) would open invisibly behind it.
+ */
+export function overlayRoot() {
   if (typeof document === 'undefined') return null;
-  return createPortal(children, document.body);
+  return document.fullscreenElement || document.body;
+}
+export function useOverlayRoot() {
+  const [root, setRoot] = useState(() => overlayRoot());
+  useEffect(() => {
+    const h = () => setRoot(overlayRoot());
+    h();
+    document.addEventListener('fullscreenchange', h);
+    return () => document.removeEventListener('fullscreenchange', h);
+  }, []);
+  return root;
 }
 
 export function Modal({ title, sub, onClose, children, footer, size, icon }) {

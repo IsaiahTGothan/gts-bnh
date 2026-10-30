@@ -337,16 +337,30 @@ function build(THREE, host, { apiRef, anchorRef, intensity, initial = {} }) {
 
   // ── loop ─────────────────────────────────────────────────────────────
   let raf = 0; let last = performance.now(); let time = 0; let visible = true;
+  const inWindow = !!host.closest('.qlm');
   const io = new IntersectionObserver((es) => { visible = es[0]?.isIntersecting ?? true; if (visible && !raf) { last = performance.now(); raf = requestAnimationFrame(loop); } }, { threshold: 0.01 });
   io.observe(host);
   const onVis = () => { if (!document.hidden && visible && !raf) { last = performance.now(); raf = requestAnimationFrame(loop); } };
   document.addEventListener('visibilitychange', onVis);
 
+  // Adaptive quality: a slow GPU (the Windows counter PCs) gets a lower-resolution canvas
+  // instead of a stuttering page. Averages frame time over ~2 s; steps 2 → 1.5 → 1 → 0.75.
+  let pr = DPR; let acc = 0; let frames = 0; let prevT = 0; let calmUntil = 0;
+  const adapt = (now) => {
+    if (prevT && now - prevT < 250) { acc += now - prevT; frames += 1; } // skip gaps (tab hidden, paused)
+    prevT = now;
+    if (frames < 120 || now < calmUntil) return;
+    const avg = acc / frames; acc = 0; frames = 0;
+    if (avg > 26 && pr > 0.75) { pr = Math.max(0.75, pr > 1.5 ? 1.5 : pr - 0.5); renderer.setPixelRatio(pr); resize(); calmUntil = now + 1500; }
+  };
+
   const fieldPos = fieldGeo.attributes.position.array;
   function loop(now) {
     raf = 0;
     if (document.hidden || !visible) return;
-    if (document.body.classList.contains('promo-open')) { last = now; raf = requestAnimationFrame(loop); return; } // hidden behind the promo screen
+    // hidden behind the promo screen, or behind the Quick log window's own stage → sleep
+    const bc = document.body.classList;
+    if (bc.contains('promo-open') || (bc.contains('qlm-open') && !inWindow)) { last = now; prevT = 0; raf = requestAnimationFrame(loop); return; }
     const dt = Math.min(0.05, (now - last) / 1000); last = now;
     time += dt * speed;
 
@@ -437,6 +451,7 @@ function build(THREE, host, { apiRef, anchorRef, intensity, initial = {} }) {
     camera.lookAt(0, 0, 0);
 
     renderer.render(scene, camera);
+    adapt(now);
     raf = requestAnimationFrame(loop);
   }
   raf = requestAnimationFrame(loop);
