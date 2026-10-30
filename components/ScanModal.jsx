@@ -9,8 +9,10 @@
 //  have no camera but a USB scanner gun — those open straight in gun mode,
 //  and a trigger pull anywhere in the app jumps here on its own.
 // ═══════════════════════════════════════════════════════════════════════════
-import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { SERVICE_TYPES } from '../lib/constants';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { PICK_TYPES } from '../lib/constants';
+import { inferFromDescription, sameFamily, topServices } from '../lib/sf-services';
+import ServiceInput, { useServiceCatalog } from './ServiceInput';
 import { cameraSupported, listCameras, parseScan, startCamera } from '../lib/scan';
 import { cx, relTime } from '../lib/utils';
 import { useStore } from './GTSApp';
@@ -176,14 +178,21 @@ function ScanResult({ result, setResult, onStart, onRescan, onForm, openTicket }
   const dupe = !asProduct ? state.tickets.find((t) => !t.deletedAt && t.orderNumber && t.orderNumber === result.value.trim() && Date.now() - new Date(t.createdAt).getTime() < (Number(m.duplicateWindowHours) || 24) * 3_600_000) : null;
   const upd = (patch) => setResult((r) => ({ ...r, ...patch }));
   useEffect(() => { gridRef.current?.focus(); }, []);
-  const types = SERVICE_TYPES.filter((s) => s.id !== 'warranty' || m.features?.warranty !== false);
+  const types = PICK_TYPES.filter((s) => s.id !== 'warranty' || m.features?.warranty !== false);
   const needDesc = m.requireDescription !== false;
   const desc = result.desc || '';
   const descOk = !needDesc || desc.trim().length >= 3;
-  const templates = (m.templates || []).filter(Boolean).slice(0, 8);
-  const pick = (id) => { upd({ type: result.type === id ? null : id }); setTimeout(() => descRef.current?.focus(), 0); };
+  const catalog = useServiceCatalog();
+  const quick = useMemo(() => topServices(state.tickets, { catalog, limit: 6 }), [state.tickets, catalog]);
+  // a tap always SELECTS (it used to toggle — a second tap, made because nothing looked selected, cleared it)
+  const pick = (id) => { upd({ type: id, typeManual: true }); setTimeout(() => descRef.current?.focus(), 0); };
+  const setDesc = (text) => setResult((r) => {
+    const inf = inferFromDescription(text, { catalog, type: r.type || null });
+    return { ...r, desc: text, sfService: inf.service?.path || null, ...(!r.typeManual ? { type: inf.type || null } : {}) };
+  });
+  const pickService = (svc) => setResult((r) => ({ ...r, desc: svc.name, sfService: svc.path, ...(svc.type && !sameFamily(r.type, svc.type) && r.type !== 'warranty' ? { type: svc.type } : {}) }));
   const go = () => {
-    if (onStart(result.type || null, desc)) return;
+    if (onStart(result.type || null, desc, result.sfService ? { sfService: result.sfService } : {})) return;
     setShake(true); setTimeout(() => setShake(false), 600);
     descRef.current?.focus();
     toast('Say what you’re doing first — e.g. “Firmware update”', { tone: 'warning' });
@@ -191,7 +200,7 @@ function ScanResult({ result, setResult, onStart, onRescan, onForm, openTicket }
   const onKey = (e) => {
     const tag = (e.target?.tagName || '').toLowerCase();
     if (tag === 'input' || tag === 'textarea') {
-      if (e.key === 'Enter') { e.preventDefault(); if (e.target === descRef.current) go(); else descRef.current?.focus(); }
+      if (e.key === 'Enter' && e.target !== descRef.current) { e.preventDefault(); descRef.current?.focus(); }
       return;
     }
     const i = TYPE_KEYS.indexOf(e.key);
@@ -227,8 +236,10 @@ function ScanResult({ result, setResult, onStart, onRescan, onForm, openTicket }
       </div>
       <div className="scan-step"><span>2</span>What are we doing? {needDesc ? <em className="is-req">required</em> : <em>optional</em>}</div>
       <div className={cx('scan-desc', !descOk && desc && 'is-short', shake && 'shake')}>
-        <Input ref={descRef} className="input-lg" placeholder="e.g. Firmware update + card format — then Enter" value={desc} onChange={(e) => upd({ desc: e.target.value })} aria-label="What are we doing" />
-        {templates.length > 0 && <div className="templates">{templates.map((x) => <button type="button" key={x} className="tpl" onClick={() => { upd({ desc: desc.trim() ? `${desc.trim()} · ${x}` : x }); descRef.current?.focus(); }}>{x}</button>)}</div>}
+        <ServiceInput ref={descRef} className="input-lg" value={desc} onChange={setDesc} onPick={pickService} type={result.type || null} ariaLabel="What are we doing"
+          placeholder="Search a service — e.g. Camera Kit Assembly — then Enter" onEnter={(e) => { e.preventDefault(); go(); }} />
+        {result.sfService && <div className="faint" style={{ fontSize: 11.5, marginTop: 4 }}>Salesforce: <b>{result.sfService}</b></div>}
+        {quick.length > 0 && <div className="templates">{quick.map((x) => <button type="button" key={x.id} className={cx('tpl', result.sfService === x.path && 'is-on')} onClick={() => { pickService(x); descRef.current?.focus(); }} title={x.path}>{x.name}</button>)}</div>}
       </div>
       <div className="row wrap" style={{ gap: 8, marginTop: 12 }}>
         <Btn variant="primary" size="lg" icon="play" onClick={go} disabled={!descOk}>Start ticket <kbd className="kbd" style={{ marginLeft: 4 }}>↵</kbd></Btn>

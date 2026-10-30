@@ -14,11 +14,13 @@
 // ═══════════════════════════════════════════════════════════════════════════
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { DEFAULT_PROMO_SLIDES, SERVICE_BY_ID, SERVICE_TYPES } from '../lib/constants';
+import { DEFAULT_PROMO_SLIDES, PICK_TYPES, SERVICE_BY_ID } from '../lib/constants';
+import { sameFamily, topServices } from '../lib/sf-services';
+import ServiceInput, { useServiceCatalog } from './ServiceInput';
 import { fmtClock, fmtDur, serviceMs, serviceState, serviceTarget } from '../lib/service';
 import { cx } from '../lib/utils';
 import { useStore } from './GTSApp';
-import { GTSMark, Icon, Input } from './ui';
+import { GTSMark, Icon, Input, useOverlayRoot } from './ui';
 import { MatrixRain } from './matrix';
 
 export const REPO_VIDEO = '/promo/gts-promo.mp4';
@@ -53,6 +55,8 @@ export default function PromoStage({ ticketId, onClose, onSwitch }) {
   const [muted, setMuted] = useState(!m.promoSound);
   const [thanks, setThanks] = useState(null);
   const rootRef = useRef(null);
+  // in the stage's customer-display full screen, only that element is painted — open inside it
+  const overlay = useOverlayRoot();
 
   // Esc minimises (the ticket keeps running); lock page scroll while open
   useEffect(() => {
@@ -74,6 +78,7 @@ export default function PromoStage({ ticketId, onClose, onSwitch }) {
   };
   const fullscreen = () => { if (document.fullscreenElement) document.exitFullscreen?.(); else rootRef.current?.requestFullscreen?.().catch(() => {}); };
 
+  if (!overlay) return null;
   return createPortal(
     <div className="promo" ref={rootRef} role="dialog" aria-label="Promo screen — ticket in service">
       <PromoMedia muted={muted} />
@@ -88,7 +93,7 @@ export default function PromoStage({ ticketId, onClose, onSwitch }) {
       </div>
       {thanks ? <ThankYou thanks={thanks} /> : <Dock key={t.id} t={t} running={running} onSwitch={onSwitch} onDone={done} api={api} toast={toast} management={m} />}
     </div>,
-    document.body,
+    overlay,
   );
 }
 
@@ -226,7 +231,9 @@ function Dock({ t, running, onSwitch, onDone, api, toast, management }) {
     onDone(serviceMs(t));
   };
   const svc = SERVICE_BY_ID[d.serviceType];
-  const templates = (management.templates || []).filter(Boolean).slice(0, 6);
+  const catalog = useServiceCatalog();
+  const allTickets = useStore().state.tickets;
+  const quick = useMemo(() => topServices(allTickets, { catalog, limit: 5 }), [allTickets, catalog]);
   return (
     <div className="promo-dock" style={{ '--c': svc?.color || 'var(--accent)' }} onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); finish(); } }}>
       <div className="promo-dock-clock">
@@ -239,13 +246,19 @@ function Dock({ t, running, onSwitch, onDone, api, toast, management }) {
         <label className="pf"><span>Order #</span><Input className="mono" value={d.orderNumber} onChange={set('orderNumber')} placeholder="1095847721" /></label>
         <label className="pf"><span>Customer</span><Input value={d.customerName} onChange={set('customerName')} placeholder="Walk-up" /></label>
         <label className="pf"><span>Type</span>
-          <span className="select"><select value={d.serviceType} onChange={set('serviceType')}><option value="">Pick a type…</option>{SERVICE_TYPES.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}</select></span>
+          <span className="select"><select value={d.serviceType} onChange={set('serviceType')}><option value="">Pick a type…</option>{PICK_TYPES.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}</select></span>
         </label>
         <label className={cx('pf pf-desc', !descOk && 'is-missing', shake && 'shake')}>
           <span>What are we doing? <em>required</em></span>
-          <Input ref={descRef} value={d.description} onChange={set('description')} placeholder="e.g. Firmware update + card format" />
-          {templates.length > 0 && !d.description.trim() && (
-            <span className="pf-tpls">{templates.map((x) => <button type="button" key={x} onClick={() => setD((v) => ({ ...v, description: x }))}>{x}</button>)}</span>
+          <ServiceInput ref={descRef} value={d.description} type={d.serviceType || null} placeholder="Search a service — e.g. Camera Kit Assembly"
+            onChange={(v) => setD((x) => ({ ...x, description: v }))}
+            onPick={(svc) => {
+              const serviceType = svc.type && !sameFamily(d.serviceType, svc.type) && d.serviceType !== 'warranty' ? svc.type : d.serviceType;
+              setD((x) => ({ ...x, description: svc.name, serviceType: serviceType || '' }));
+              api.updateTicket(t.id, { description: svc.name, sfService: svc.path, serviceType: serviceType || null });
+            }} />
+          {quick.length > 0 && !d.description.trim() && (
+            <span className="pf-tpls">{quick.map((x) => <button type="button" key={x.id} onClick={() => { setD((v) => ({ ...v, description: x.name, serviceType: v.serviceType || x.type || '' })); api.updateTicket(t.id, { description: x.name, sfService: x.path, ...(d.serviceType ? {} : { serviceType: x.type || null }) }); }}>{x.name}</button>)}</span>
           )}
         </label>
       </div>

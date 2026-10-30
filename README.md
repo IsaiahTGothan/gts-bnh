@@ -20,6 +20,24 @@ Built with Next.js (App Router) + React, a hand-rolled design system (no UI libr
 
 ## What’s new in V4
 
+* **Salesforce services (4.4)**: the description is now one short line that searches the 77 verified GTS services from Salesforce as you type.
+  * Every word you type has to match, and it accepts close spellings. “secure data” lists all four Secure Data services; adding “dropoff” narrows it to the two Drop Offs. ↑ ↓ Enter picks one.
+  * The ticket stores the short name (“Camera Kit Assembly”) plus the full path (`sfService`: “Pro Photo › Camera Kit Assembly”). The **service type is picked from it**: a Computers service never flips a Laptop you tapped, and a type you tapped yourself always wins.
+  * Text that isn’t on the list is kept as typed, and you can add it to the list (it shows as team-added). Nothing matched and no type picked → **Other**.
+  * Quick chips show the counter’s most-used services.
+  * This works in Quick Log, the Quick log window, scan-to-start, the live editor and the promo dock.
+* **Audio replaces Monitors (4.4)**: about half of the old “Other” tickets were audio. The chips are now ordered by real use: Camera, Laptop, Audio, Tablet, Computer, Phone, Hard Drive, Firmware, Printers, Lighting, Warranty, Other. Old Monitors tickets keep their label.
+  * Management → System → **Services** → *Re-sort Other* suggests a type for every Other, untyped or Monitors ticket from its own description. Apply the ones you agree with.
+* **Quick log window (4.4)**: the top-right **Quick log** button (and `T`) opens the full live stage — 3D core, customer HUD, **Scan** — over any page. Logging plays the save animation, then the promo takes over.
+* **Fixes (4.4)**:
+  * Customer display (full screen) now opens the promo *inside* the full-screen stage, so it no longer looks frozen.
+  * Scan-to-start: a tapped service type now shows a check and stays selected. A second tap used to clear it silently.
+  * The empty box in the order field is gone.
+* **Speed (4.4)**:
+  * Date formatting is cached, ticket cards only re-render when their own ticket changes, the list renders 60 at a time with *Show more*, stats only recompute when ticket data changes, and the local save runs in idle time (flushed on close).
+  * No live blur over animated layers.
+  * The 3D stage lowers its own resolution on slow GPUs.
+  * Measured with 3,000 tickets: saving a ticket went from ~520 ms of blocked main thread to ~190 ms.
 * **Ops intelligence (4.3)**: a new **Ops** tab (key `0`), review-first, that never writes to Salesforce itself.
   * **Reconcile:** import the day’s Salesforce report export (CSV or JSON). Every GTS ticket is lined up against it and gets one status: *Matched, Verified, GTS only, Salesforce only, Missing task, Incomplete* or *Conflict*.
     * Order numbers are only ever cleaned of formatting. Leading zeros, Excel-mangled numbers (`1.09E+09`), near-identical numbers (swapped digits, an extra zero), and duplicate visits that don’t pair up go to a person instead of being merged.

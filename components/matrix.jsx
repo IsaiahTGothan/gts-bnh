@@ -39,6 +39,7 @@ export function MatrixRain({ className, opacity = 0.25, fontSize = 15, speed = 1
       if (document.hidden || t - last < (reduce ? 120 : 45)) return;
       // behind the promo screen: only the promo's own rain keeps falling
       if (document.body.classList.contains('promo-open') && !canvas.closest('.promo')) return;
+      if (document.body.classList.contains('qlm-open') && !canvas.closest('.qlm')) return; // the Quick log window covers it
       last = t;
       ctx.clearRect(0, 0, w, h);
       ctx.font = `${fontSize}px "JetBrains Mono", ui-monospace, monospace`;

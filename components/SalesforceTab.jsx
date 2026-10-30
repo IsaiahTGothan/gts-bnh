@@ -9,7 +9,9 @@
 // ═══════════════════════════════════════════════════════════════════════════
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { SERVICE_BY_ID, SERVICE_TYPES, TECHS, serviceLabel, techName } from '../lib/constants';
+import { PICK_TYPES, SERVICE_BY_ID, SERVICE_TYPES, TECHS, serviceLabel, techName } from '../lib/constants';
+import { sameFamily } from '../lib/sf-services';
+import ServiceInput from './ServiceInput';
 import { sfPushTicket } from '../lib/salesforce';
 import { computeStats, fmtPct } from '../lib/stats';
 import { fmtClock, fmtDur, maskName, serviceMs, serviceState, serviceTarget } from '../lib/service';
@@ -20,7 +22,7 @@ import QuickLogScene from './QuickLogScene';
 import { Decode, MatrixRain } from './matrix';
 import { TicketFields, ticketPayload, useTicketDraft } from './assignment-views';
 import { BrandSwatch } from './warranty-ui';
-import { Avatar, Btn, Chip, EmptyState, Field, Icon, Input, Modal, Segmented, Select, ServiceIcon, TicketStatusChip } from './ui';
+import { Avatar, Btn, Chip, EmptyState, Field, Icon, Input, Modal, Portal, Segmented, Select, ServiceIcon, TicketStatusChip } from './ui';
 
 /** Re-renders the caller every `ms` while `on`. Keep it in small leaf components. */
 function useTick(ms = 1000, on = true) {
@@ -63,7 +65,11 @@ export default function SalesforceTab() {
     .filter((t) => !type || t.serviceType === type)
     .filter((t) => matches(q, t.tag, t.orderNumber, t.customerName, t.description, serviceLabel(t.serviceType), techName(t.tech), t.sfCaseNumber, t.warrantyBrand, t.serial))
     .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)), [state.tickets, view, tech, type, q]); // eslint-disable-line react-hooks/exhaustive-deps
-  const shown = list.slice(0, layout === 'table' ? 400 : 120);
+  // render a page at a time (60 cards / 200 rows) — "Show more" adds the next page
+  const page = layout === 'table' ? 200 : 60;
+  const [limit, setLimit] = useState(page);
+  useEffect(() => { setLimit(page); }, [view, tech, type, q, layout]); // eslint-disable-line react-hooks/exhaustive-deps
+  const shown = list.slice(0, limit);
 
   // ── multi-select (click the box · shift-click for a range · ⌘/Ctrl+A for the view · Esc clears)
   useEffect(() => { setSel(new Set()); lastPick.current = null; }, [view, tech, type]);
@@ -121,8 +127,10 @@ export default function SalesforceTab() {
   };
 
   const loggedToday = all.filter((t) => t.loggedAt && isToday(t.loggedAt, now)).length;
-  const st = useMemo(() => computeStats(state, { days: 1, now }), [state, now]);
-  const speed30 = useMemo(() => computeStats(state, { days: 30, now }).speed, [state, now]);
+  // only the data stats read — typing a setting or a sync stamp doesn't redo 30 days of maths
+  const statDeps = [state.tickets, state.assignments, state.queue, state.management, state.team, state.settings.overdueDays, now];
+  const st = useMemo(() => computeStats(state, { days: 1, now }), statDeps); // eslint-disable-line react-hooks/exhaustive-deps
+  const speed30 = useMemo(() => computeStats(state, { days: 30, now }).speed, statDeps); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Push to Salesforce: real Case when the connector is set up, flag otherwise
   const push = async (t) => {
@@ -144,6 +152,15 @@ export default function SalesforceTab() {
       toast(`Salesforce: ${res.error || 'push failed'}`, { tone: 'error', duration: 9000, action: { label: 'Mark pushed anyway', onClick: () => api.logTicket(t.id, { sfPushedVia: 'manual' }) } });
     }
   };
+  // cards get one stable action object (reads the latest handlers through a ref), so a card only
+  // re-renders when its own ticket changes — not on every keystroke or clock tick elsewhere
+  const actsRef = useRef(null);
+  actsRef.current = {
+    pick: (id, e) => pick(id, e), push: (t) => push(t), unix: (t) => openUnixScan(t.id), convert: (t) => toAssignment(t), edit: (t) => setEditing(t), remove: (t) => remove(t),
+    reopen: (t) => { api.reopenTicket(t.id); toast(`${t.tag} reopened`); },
+    copy: async (t) => { await copyText(t.orderNumber); toast(`Order ${t.orderNumber} copied`); },
+  };
+  const cardActs = useMemo(() => Object.fromEntries(['pick', 'push', 'unix', 'convert', 'edit', 'remove', 'reopen', 'copy'].map((k) => [k, (...a) => actsRef.current[k](...a)])), []);
   const toAssignment = (t) => newAssignment({ customerName: t.customerName, orderNumber: t.orderNumber, serviceType: t.serviceType, issue: t.description, tech: t.tech }, t.id);
   const remove = (t) => confirm({ title: `Delete ${t.tag}?`, danger: true, confirmLabel: 'Delete', message: 'Removes the ticket from the log. Undo is available for a few seconds.', onConfirm: () => { api.deleteTicket(t.id); toast(`${t.tag} deleted`, { tone: 'warning', duration: 7000, action: { label: 'Undo', onClick: () => api.restoreTicket(t.id) } }); } });
   const serve = (qrec) => {
@@ -201,15 +218,13 @@ export default function SalesforceTab() {
         ) : (
         <div className={cx('list list-3', selecting && 'is-selecting')}>
           {shown.map((t, i) => (
-            <TicketCard key={t.id} t={t} i={i} now={now} selected={sel.has(t.id)} onPick={(e) => pick(t.id, e)} highlighted={highlight?.type === 'ticket' && highlight.id === t.id} pushing={!!pushing[t.id]} sfLive={connections.salesforce.configured}
-              onPush={() => push(t)} onUnix={() => openUnixScan(t.id)} onReopen={() => { api.reopenTicket(t.id); toast(`${t.tag} reopened`); }} onConvert={() => toAssignment(t)} onEdit={() => setEditing(t)} onDelete={can('techDelete') ? () => remove(t) : null}
-              onCopy={async () => { await copyText(t.orderNumber); toast(`Order ${t.orderNumber} copied`); }}
-              openAssignment={t.convertedTo} />
+            <MemoTicketCard key={t.id} t={t} i={i} now={now} selected={sel.has(t.id)} highlighted={highlight?.type === 'ticket' && highlight.id === t.id} pushing={!!pushing[t.id]} sfLive={connections.salesforce.configured}
+              canDelete={can('techDelete')} act={cardActs} />
           ))}
         </div>
         )
       )}
-      {list.length > shown.length && <div className="faint mt-3" style={{ fontSize: 12 }}>Showing the newest {shown.length} of {list.length} — search or filter to find older tickets{layout === 'cards' ? ', or switch to the table layout (400 rows)' : ''}.</div>}
+      {list.length > shown.length && <div className="row wrap mt-3" style={{ gap: 10 }}><Btn size="sm" icon="chevron-down" onClick={() => setLimit((n) => n + page)}>Show {Math.min(page, list.length - shown.length)} more</Btn><span className="faint" style={{ fontSize: 12 }}>Showing the newest {shown.length} of {list.length} — or search / filter.</span></div>}
 
       {selecting && <BulkBar selected={selected} view={view} onAction={bulk} onExport={exportSelected} onClear={clearSel} onAll={selectAll} total={shown.length} canDelete={can('techDelete')} canExport={can('techExport')} sfLive={connections.salesforce.configured} />}
 
@@ -231,7 +246,33 @@ function Metric({ icon, value, label, hint, tone, onClick }) {
 // ═══════════════════════════════════════════════════════════════════════════
 //  THE STAGE — form card + live 3D scene + customer-facing HUD
 // ═══════════════════════════════════════════════════════════════════════════
-function QuickLogStage({ prefill, onPrefillUsed, onConvert, onUnix }) {
+/**
+ * The Quick Log window (top-right "Quick log" / T): the same live stage as the tab — 3D scene,
+ * customer HUD, Scan — in a window over whatever page you're on. Logging plays the save
+ * animation, then the window closes and the promo screen takes over.
+ */
+export function QuickLogWindow({ prefill, onClose, onSaved, onConvert, onUnix }) {
+  useEffect(() => {
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    document.body.classList.add('qlm-open'); // the tab's own stage + rain sleep while this one runs
+    const k = (e) => { if (e.key === 'Escape' && !e.defaultPrevented) onClose(); };
+    window.addEventListener('keydown', k);
+    return () => { document.body.style.overflow = prev; document.body.classList.remove('qlm-open'); window.removeEventListener('keydown', k); };
+  }, [onClose]);
+  return (
+    <Portal>
+      <div className="backdrop qlm-backdrop" />
+      <div className="qlm-wrap" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+        <div className="qlm" role="dialog" aria-modal="true" aria-label="Quick log">
+          <QuickLogStage inModal prefill={prefill} onSaved={onSaved} onClose={onClose} onConvert={onConvert} onUnix={onUnix} />
+        </div>
+      </div>
+    </Portal>
+  );
+}
+
+function QuickLogStage({ prefill, onPrefillUsed, onConvert, onUnix, inModal, onSaved, onClose }) {
   const { state, api, toast, sfx, features, warrantyBrands, openScanner } = useStore();
   const m = state.management || {};
   const effects = state.settings.effects || 'auto';
@@ -308,6 +349,8 @@ function QuickLogStage({ prefill, onPrefillUsed, onConvert, onUnix }) {
     if (!touch) setTimeout(() => orderRef.current?.focus(), 30);
     if (then === 'convert') onConvert(t);
     if (then === 'unix') onUnix(t);
+    // in the window: let the save animation play, then close (the caller opens the promo)
+    if (inModal) { if (!then) setTimeout(() => onSaved?.(t), 950); return; }
     // ticket is running → the counter screen becomes the promo (Management → System → Promo screen)
     if (!then && t.serviceStartedAt && !t.serviceEndedAt) setTimeout(() => window.dispatchEvent(new CustomEvent('gts:promo-open', { detail: { id: t.id } })), 450);
   };
@@ -324,7 +367,7 @@ function QuickLogStage({ prefill, onPrefillUsed, onConvert, onUnix }) {
 
   const live = sceneOn && !sceneFailed;
   return (
-    <section ref={stageRef} className={cx('ql-stage', live && 'has-scene', display && 'is-display', collapsed && 'is-collapsed')}>
+    <section ref={stageRef} className={cx('ql-stage', live && 'has-scene', display && 'is-display', collapsed && 'is-collapsed', inModal && 'is-window')}>
       <div className="ql-backdrop" aria-hidden="true"><i /><i /><i /></div>
       {effects !== 'off' && <MatrixRain className="ql-rain" opacity={matrix ? 0.34 : 0.16} fontSize={matrix ? 15 : 14} speed={intensity === 'calm' ? 0.6 : 1} />}
       {live && <QuickLogScene apiRef={sceneApi} anchorRef={anchorRef} intensity={intensity} color={tint} rgb={rgb} onFail={() => setSceneFailed(true)} />}
@@ -341,8 +384,9 @@ function QuickLogStage({ prefill, onPrefillUsed, onConvert, onUnix }) {
             {last && !startedAt && <Chip size="sm" tone="green" icon="check">{last.tag}{last.secs ? ` · ${last.secs}s` : ''}</Chip>}
             {last?.order && !startedAt && <Btn size="sm" variant="ghost" icon="hash" onClick={() => onUnix({ id: last.id })}>UNIX</Btn>}
             {features.scanner !== false && <Btn size="sm" variant="outline-accent" icon="scan" className="scan-btn" onClick={() => openScanner()} title="Scan a barcode — camera or scanner gun (S)">Scan</Btn>}
-            {features.customerDisplay !== false && <Btn size="sm" variant="ghost" icon={display ? 'minimize' : 'maximize'} onClick={toggleDisplay} title="Customer display — full screen stage">{display ? 'Exit' : ''}</Btn>}
-            <Btn size="sm" variant="ghost" icon={collapsed ? 'chevron-right' : 'chevron-down'} onClick={() => setCollapsed((v) => !v)} title={collapsed ? 'Show the form' : 'Hide the form'} />
+            {!inModal && features.customerDisplay !== false && <Btn size="sm" variant="ghost" icon={display ? 'minimize' : 'maximize'} onClick={toggleDisplay} title="Customer display — full screen stage">{display ? 'Exit' : ''}</Btn>}
+            {!inModal && <Btn size="sm" variant="ghost" icon={collapsed ? 'chevron-right' : 'chevron-down'} onClick={() => setCollapsed((v) => !v)} title={collapsed ? 'Show the form' : 'Hide the form'} />}
+            {inModal && <Btn size="sm" variant="ghost" icon="x" onClick={onClose} title="Close (Esc)" aria-label="Close" />}
           </div>
         </header>
         {!collapsed && (
@@ -495,10 +539,17 @@ function LiveEditor({ t, onMore }) {
       <div className="live-edit-grid">
         <Input ref={first} className="mono" placeholder="Order #" value={d.orderNumber} onChange={set('orderNumber')} aria-label="Order number" />
         <Input placeholder="Customer name" value={d.customerName} onChange={set('customerName')} aria-label="Customer name" />
-        <Select value={d.serviceType} onChange={set('serviceType')} aria-label="Service type"><option value="">Type…</option>{SERVICE_TYPES.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}</Select>
+        <Select value={d.serviceType} onChange={set('serviceType')} aria-label="Service type"><option value="">Type…</option>{PICK_TYPES.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}</Select>
         {d.serviceType === 'warranty' && <Select value={d.warrantyBrand} onChange={set('warrantyBrand')} aria-label="Warranty brand"><option value="">Brand…</option>{warrantyBrands.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}</Select>}
       </div>
-      <textarea className={cx('textarea', needDesc && d.description.trim().length < 3 && 'is-invalid')} rows={2} placeholder="What are we doing? Required — saves as you type" value={d.description} onChange={set('description')} aria-label="Description" />
+      <ServiceInput value={d.description} type={d.serviceType || null} invalid={needDesc && d.description.trim().length < 3} placeholder="Service — e.g. Camera Kit Assembly (saves as you type)"
+        onChange={(v) => setD((x) => ({ ...x, description: v }))}
+        onPick={(svc) => {
+          const serviceType = svc.type && !sameFamily(d.serviceType, svc.type) && d.serviceType !== 'warranty' ? svc.type : d.serviceType;
+          setD((x) => ({ ...x, description: svc.name, serviceType: serviceType || '' }));
+          api.updateTicket(t.id, { description: svc.name, sfService: svc.path, serviceType: serviceType || null });
+        }} />
+      {t.sfService && <span className="faint" style={{ fontSize: 11 }}>Salesforce: {t.sfService}</span>}
       <div className="row" style={{ gap: 6, justifyContent: 'space-between' }}>
         <span className="faint" style={{ fontSize: 11 }}><span className="svc-live" style={{ display: 'inline-block', marginRight: 6 }} />Saves automatically · clock keeps running</span>
         <Btn size="xs" variant="ghost" icon="timer" onClick={onMore}>Times & more</Btn>
@@ -533,7 +584,7 @@ function QueuePanel({ onServe }) {
       <div className="queue-add" onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); add(); } }}>
         <Input ref={nameRef} placeholder="Name" value={name} onChange={(e) => setName(e.target.value)} />
         <Input placeholder="What do they need?" value={reason} onChange={(e) => setReason(e.target.value)} />
-        <Select value={type} onChange={(e) => setType(e.target.value)} style={{ width: 130 }}><option value="">Type…</option>{SERVICE_TYPES.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}</Select>
+        <Select value={type} onChange={(e) => setType(e.target.value)} style={{ width: 130 }}><option value="">Type…</option>{PICK_TYPES.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}</Select>
         <Btn variant="primary" icon="user-plus" onClick={add} aria-label="Add to queue" />
       </div>
       {waiting.length > 0 && (
@@ -567,6 +618,14 @@ function QueueRow({ x, n, onServe }) {
 // ═══════════════════════════════════════════════════════════════════════════
 //  TICKET CARD
 // ═══════════════════════════════════════════════════════════════════════════
+const MemoTicketCard = React.memo(function MemoTicketCard({ t, i, now, selected, highlighted, pushing, sfLive, canDelete, act }) {
+  return (
+    <TicketCard t={t} i={i} now={now} selected={selected} highlighted={highlighted} pushing={pushing} sfLive={sfLive}
+      onPick={(e) => act.pick(t.id, e)} onPush={() => act.push(t)} onUnix={() => act.unix(t)} onReopen={() => act.reopen(t)} onConvert={() => act.convert(t)}
+      onEdit={() => act.edit(t)} onDelete={canDelete ? () => act.remove(t) : null} onCopy={() => act.copy(t)} openAssignment={t.convertedTo} />
+  );
+});
+
 function TicketCard({ t, i, now, selected, onPick, highlighted, pushing, sfLive, onPush, onUnix, onReopen, onConvert, onEdit, onDelete, onCopy, openAssignment }) {
   const { openAssignment: goAsg, warrantyBrands, openWarranty } = useStore();
   const svc = SERVICE_BY_ID[t.serviceType];
@@ -663,7 +722,7 @@ function BulkBar({ selected, view, onAction, onExport, onClear, onAll, total, ca
           <option value="">Assign to…</option>{TECHS.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}<option value="__none">Unassigned</option>
         </Select>
         <Select value="" onChange={(e) => { if (e.target.value) onAction('type', e.target.value); }} style={{ width: 130 }} aria-label="Set type">
-          <option value="">Set type…</option>{SERVICE_TYPES.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
+          <option value="">Set type…</option>{PICK_TYPES.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
         </Select>
         {canExport && <Btn size="sm" variant="ghost" icon="download" onClick={onExport}>CSV</Btn>}
         {canDelete && <Btn size="sm" variant="ghost" icon="trash" onClick={() => onAction('delete')} aria-label="Delete selected" title="Delete" />}
@@ -744,7 +803,7 @@ const fromLocal = (v) => (v ? new Date(v).toISOString() : null);
 
 function EditTicketModal({ t, onClose }) {
   const { api, toast, can } = useStore();
-  const draft = useTicketDraft({ id: t.id, orderNumber: t.orderNumber || '', customerName: t.customerName || '', serviceType: t.serviceType, description: t.description || '', tech: t.tech ?? null, warrantyBrand: t.warrantyBrand || null, serial: t.serial || '' });
+  const draft = useTicketDraft({ id: t.id, orderNumber: t.orderNumber || '', customerName: t.customerName || '', serviceType: t.serviceType, description: t.description || '', sfService: t.sfService || null, tech: t.tech ?? null, warrantyBrand: t.warrantyBrand || null, serial: t.serial || '' });
   const canTimes = can('techEditTimes');
   const [times, setTimes] = useState(() => ({ createdAt: toLocal(t.createdAt), start: toLocal(t.serviceStartedAt), end: toLocal(t.serviceEndedAt), paused: Math.round((Number(t.servicePausedMs) || 0) / 60_000) }));
   const preview = { serviceStartedAt: fromLocal(times.start), serviceEndedAt: fromLocal(times.end), servicePausedMs: Math.max(0, Number(times.paused) || 0) * 60_000, servicePausedAt: times.end ? null : t.servicePausedAt };
@@ -752,8 +811,8 @@ function EditTicketModal({ t, onClose }) {
   const save = () => {
     if (!draft.valid) { draft.attempt(); return; }
     if (bad) { toast('The end time is before the start time', { tone: 'warning' }); return; }
-    const { clock, id, ...fields } = draft.d;
-    api.updateTicket(t.id, { ...fields, warrantyBrand: fields.serviceType === 'warranty' ? fields.warrantyBrand : null });
+    const { clock, id, sfService, ...fields } = draft.d;
+    api.updateTicket(t.id, { ...fields, ...(sfService ? { sfService } : {}), warrantyBrand: fields.serviceType === 'warranty' ? fields.warrantyBrand : null });
     if (canTimes) {
       const changed = toLocal(t.serviceStartedAt) !== times.start || toLocal(t.serviceEndedAt) !== times.end || Math.round((Number(t.servicePausedMs) || 0) / 60_000) !== Number(times.paused) || toLocal(t.createdAt) !== times.createdAt;
       if (changed) api.setServiceTimes(t.id, { ...preview, ...(times.createdAt && toLocal(t.createdAt) !== times.createdAt ? { createdAt: fromLocal(times.createdAt) } : {}) });

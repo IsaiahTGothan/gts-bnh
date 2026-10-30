@@ -1848,3 +1848,61 @@ button.chip { cursor: pointer; }
 .ops-history > div { padding: 4px 0; border-top: 1px solid var(--line); }
 .ops-list { margin: 0; padding-left: 18px; font-size: 13px; display: grid; gap: 4px; }
 .ops-rules { display: grid; gap: 4px; font-size: 12.5px; color: var(--text-2); }
+
+/* ─── V4.4 service search, type chips, scan picker ──────────────────────── */
+.svc-input { position: relative; }
+.svc-input .input { padding-right: 150px; }
+.svc-input.input-lg .input { font-size: 16px; height: 48px; }
+.svc-badge { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); display: inline-flex; align-items: center; gap: 5px; max-width: 140px; font-size: 11px; font-weight: 600; padding: 3px 8px; border-radius: 999px; color: var(--green); background: var(--green-soft); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; pointer-events: none; }
+.svc-badge.is-custom { color: var(--text-3); background: var(--bg-3); font-weight: 500; }
+.svc-menu { position: fixed; z-index: 96; max-height: min(340px, 50vh); overflow-y: auto; padding: 6px; border-radius: 12px; background: var(--bg-2); border: 1px solid var(--line-2); box-shadow: 0 18px 48px -12px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,255,255,0.02); animation: svcIn 120ms var(--ease, ease-out); }
+.svc-menu.is-up { transform-origin: bottom; }
+@keyframes svcIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+.svc-row { --c: var(--accent); width: 100%; display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 8px; text-align: left; font-size: 13.5px; color: var(--text); }
+.svc-row svg { color: var(--c); }
+.svc-row.is-hi { background: color-mix(in srgb, var(--c) 14%, transparent); }
+.svc-name { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.svc-group { font-size: 11.5px; color: var(--text-3); white-space: nowrap; }
+.svc-row.is-meta { grid-template-columns: 18px 1fr; color: var(--text-2); font-size: 12.5px; }
+.svc-row.is-meta svg { color: var(--text-3); }
+.svc-foot { font-size: 10.5px; color: var(--text-3); padding: 6px 10px 2px; border-top: 1px solid var(--line); margin-top: 4px; }
+.tpl.is-on { border-style: solid; border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+/* the order-field digit counter only exists while there are digits (no empty box) */
+.order-count { background: transparent; }
+.order-count.is-good { color: var(--green); background: var(--green-soft); }
+/* service-type buttons take their own colour when picked */
+.typebtn { --c: var(--accent); }
+.typebtn.is-on { background: color-mix(in srgb, var(--c) 16%, transparent); border-color: var(--c); color: var(--c); box-shadow: 0 0 0 1px var(--c) inset, 0 8px 24px -12px var(--c); }
+/* scan picker: a tap has to LOOK like it landed */
+.scan-type:active { transform: scale(0.95); transition-duration: 60ms; }
+.scan-type.is-on { border-color: var(--c); color: var(--text); background: color-mix(in srgb, var(--c) 20%, var(--bg-1)); box-shadow: 0 0 0 2px var(--c) inset, 0 12px 28px -12px var(--c); transform: translateY(-2px); animation: scanPick 260ms var(--ease, ease-out); }
+.scan-type.is-on::after { content: ''; position: absolute; top: 7px; right: 7px; width: 16px; height: 16px; border-radius: 50%; background: var(--c) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23051018' stroke-width='3.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 12l5 5 9-10'/%3E%3C/svg%3E") center/11px no-repeat; }
+@keyframes scanPick { 0% { transform: scale(0.94); } 60% { transform: translateY(-3px) scale(1.03); } 100% { transform: translateY(-2px); } }
+@media (prefers-reduced-motion: reduce) { .scan-type.is-on, .svc-menu { animation: none; } }
+/* Quick log window — the live stage over any page */
+.qlm-backdrop { backdrop-filter: blur(6px); }
+.qlm-wrap { position: fixed; inset: 0; z-index: 62; display: grid; place-items: center; padding: 22px; overflow-y: auto; }
+.qlm { width: min(1380px, 100%); animation: qlmIn 260ms var(--ease, ease-out) both; }
+.qlm .ql-stage.is-window { min-height: min(640px, calc(100vh - 44px)); box-shadow: 0 40px 120px -30px rgba(0,0,0,0.85), 0 0 0 1px rgba(34,211,238,0.18), 0 30px 90px -40px var(--accent); }
+@keyframes qlmIn { from { opacity: 0; transform: translateY(14px) scale(0.985); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .qlm { animation: none; } }
+@media (max-width: 900px) { .qlm-wrap { padding: 8px; place-items: start center; } }
+.svc-groups { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 10px; }
+.svc-group-card { display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; border-radius: 10px; background: var(--bg-1); border: 1px solid var(--line); font-size: 12.5px; }
+.svc-group-card b { font-size: 12px; letter-spacing: 0.02em; margin-bottom: 2px; }
+.svc-group-card span { display: flex; align-items: center; gap: 6px; color: var(--text-2); }
+.svc-group-card span svg { color: var(--c); flex: none; }
+.mini-select { background: transparent; border: 0; color: var(--text-3); font-size: 11px; padding: 0 2px; }
+.resort-table { max-height: 420px; overflow-y: auto; }
+.scan-step { display: flex; align-items: center; gap: 10px; margin: 18px 0 0; font-weight: 700; font-size: 14px; }
+.scan-step > span { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; font-size: 12px; font-weight: 700; background: var(--accent-soft); color: var(--accent); border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent); flex: none; }
+.scan-step em { font-style: normal; font-weight: 500; font-size: 12px; color: var(--text-3); }
+.scan-step em.is-req { color: var(--amber); }
+.scan-desc { margin-top: 10px; }
+/* Performance: no live blur over things that animate every frame (3D stage, digital rain, the
+   promo video, the Quick log window's backdrop). Each one forced a full re-blur per frame;
+   near-opaque fills look the same and cost nothing. */
+.ql-card { backdrop-filter: none; -webkit-backdrop-filter: none; background: color-mix(in srgb, var(--bg-1) 90%, transparent); }
+.qlm-backdrop { backdrop-filter: none; -webkit-backdrop-filter: none; background: rgba(2, 6, 12, 0.74); }
+.promo-brand, .promo-icon, .pf-tpls button { backdrop-filter: none; -webkit-backdrop-filter: none; background: rgba(4, 8, 14, 0.82); }
+[data-theme="matrix"] :is(.strip, .rail, .sysnav, .mobilenav) { backdrop-filter: none; -webkit-backdrop-filter: none; background: color-mix(in srgb, var(--bg-1) 95%, transparent); }
