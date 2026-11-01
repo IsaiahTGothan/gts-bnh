@@ -20,6 +20,20 @@ Built with Next.js (App Router) + React, a hand-rolled design system (no UI libr
 
 ## What’s new in V5
 
+* **Salesforce copy sheet (5.1).** Quick Log → **Salesforce sheet**, the command palette, or the direct link `gts-hub.vercel.app/#salesforce-sheet` (bookmark it for the bot).
+  * It lists every open, not-yet-pushed Quick Log ticket in one spreadsheet-style table, oldest first:
+    * GTS ticket and order #;
+    * customer and the Salesforce service (Group › Service);
+    * the description to copy exactly;
+    * the Salesforce tech, always *Guest Technical Services Queue*;
+    * type, and who logged it.
+  * Rows with no service on file say **Pick the closest**; nothing is invented.
+  * At the top are the bot’s instructions:
+    * in order: New Guest → order # (select all its orders) → queue tech → exact description → **Take → Select a Service** → save;
+    * a red **Never** list. The first rule: never complete, close or resolve anything in Salesforce unless the person at the counter says so. The bot only adds guests and services, and only in **Customers In Queue**.
+  * **Open Salesforce** button; a manager can change the link.
+  * **Copy table** pastes into Excel/Sheets; CSV download.
+  * Every row has **Copied / Skipped** (with a reason). **Confirm results** marks the copied ones pushed (`sfPushedVia: sheet`), keeps skipped ones open with their reason, logs both in Activity, and shows the summary with **Undo**. Marks survive a page reload until confirmed.
 * **Pick your colour.** The **Look** button in the top bar (or Home → Settings → Appearance) has:
   * **Theme:** Dark / Light / Matrix.
   * **Colour:** 9 accents — Cyan, B&H green, Blue, Violet, Pink, Red, Orange, Gold, Silver — plus **any colour** from a picker.

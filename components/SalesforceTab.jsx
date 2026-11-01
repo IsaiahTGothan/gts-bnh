@@ -32,7 +32,7 @@ function useTick(ms = 1000, on = true) {
 }
 
 export default function SalesforceTab() {
-  const { state, api, now, toast, sfx, newAssignment, confirm, highlight, openUnixScan, connections, features, can, goal } = useStore();
+  const { state, api, now, toast, sfx, newAssignment, confirm, highlight, openUnixScan, connections, features, can, goal, openSfSheet } = useStore();
   const [view, setView] = useState('open');
   const [q, setQ] = useState('');
   const [tech, setTech] = useState('');
@@ -176,6 +176,9 @@ export default function SalesforceTab() {
         <div>
           <div className="eyebrow">Quick Log · Salesforce + UNIX · service clock</div>
           <h1 className="page-title" style={{ marginTop: 6 }}>Log it once. <span className="grad-text">Push it everywhere.</span></h1>
+          <div className="row wrap" style={{ gap: 8, marginTop: 12 }}>
+            <Btn variant="primary" icon="send" onClick={openSfSheet} title="Every open, unpushed ticket as one sheet to copy into Salesforce (also at /#salesforce-sheet)">Salesforce sheet{counts.open ? ` · ${counts.open}` : ''}</Btn>
+          </div>
         </div>
         <div className="ql-metrics">
           <Metric icon="users" value={goal?.thisHour ?? 0} label="this hour" hint={`${goal?.lastHour ?? 0} last hour`} tone="accent" />
