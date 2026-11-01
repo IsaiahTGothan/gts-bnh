@@ -50,9 +50,16 @@ const ServiceInput = forwardRef(function ServiceInput({ value, onChange, onPick,
       const up = below < 280 && r.top > below;
       setBox((b) => (b && b.left === r.left && b.top === r.top && b.width === r.width && b.up === up && b.bottom === r.bottom ? b : { left: r.left, top: r.top, bottom: r.bottom, width: r.width, up }));
     };
-    const loop = () => { place(); raf = requestAnimationFrame(loop); };
-    loop();
-    return () => cancelAnimationFrame(raf);
+    // re-place on scroll / resize, plus a short burst while a window or dock animates in —
+    // not every frame for as long as the list is open
+    const queue = () => { if (!raf) raf = requestAnimationFrame(() => { raf = 0; place(); }); };
+    place();
+    let frames = 0; let burst = 0;
+    const settle = () => { place(); if (++frames < 10) burst = requestAnimationFrame(settle); };
+    burst = requestAnimationFrame(settle);
+    window.addEventListener('scroll', queue, true);
+    window.addEventListener('resize', queue);
+    return () => { cancelAnimationFrame(raf); cancelAnimationFrame(burst); window.removeEventListener('scroll', queue, true); window.removeEventListener('resize', queue); };
   }, [visible]);
 
   const pick = (s) => { onPick?.(s); setOpen(false); };
