@@ -2155,3 +2155,94 @@ html:not([data-theme='matrix']) .bg-glow {
   .strip-title { display: none; }
   .strip-inner { grid-template-columns: auto minmax(0, 1fr); }
 }
+
+/* ═══ V5.1 Salesforce copy sheet ═══════════════════════════════════════════ */
+.sfs { position: fixed; inset: 0; z-index: 75; display: grid; grid-template-rows: auto minmax(0, 1fr) auto; background:
+  radial-gradient(900px 500px at 0% -10%, color-mix(in srgb, var(--accent) 14%, transparent), transparent 60%), var(--bg-0); animation: fade var(--med) var(--ease); }
+.sfs-head { display: flex; align-items: center; gap: 14px; padding: 16px 28px; border-bottom: 1px solid var(--line); background: color-mix(in srgb, var(--bg-1) 92%, transparent); }
+.sfs-logo { width: 44px; height: 44px; border-radius: 14px; display: grid; place-items: center; color: var(--accent-ink); background: linear-gradient(135deg, var(--accent-2), var(--accent)); box-shadow: var(--glow-btn); flex: none; }
+.sfs-titles { min-width: 0; flex: 1 1 auto; }
+.sfs-titles h1 { font-family: var(--font-display); font-size: 24px; letter-spacing: -0.02em; line-height: 1.1; }
+.sfs-titles p { color: var(--text-2); font-size: 13.5px; margin-top: 3px; }
+.sfs-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+.sfs-actions a.btn { text-decoration: none; display: inline-flex; align-items: center; gap: 8px; }
+.sfs-body { overflow: auto; padding: 20px 28px 28px; display: grid; gap: 16px; align-content: start; }
+.sfs-banner { display: flex; gap: 12px; align-items: flex-start; padding: 14px 16px; border-radius: 16px; background: color-mix(in srgb, var(--red) 12%, var(--bg-2)); border: 1px solid color-mix(in srgb, var(--red) 45%, transparent); color: var(--text); font-size: 14px; line-height: 1.5; }
+.sfs-banner svg { color: var(--red-2); flex: none; margin-top: 2px; }
+.sfs-banner b { color: var(--red-2); }
+.sfs-banner div b + b, .sfs-banner div b:not(:first-child) { color: var(--text); }
+.sfs-rules { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 16px; }
+.sfs-rules-col { padding: 18px 20px; border-radius: 18px; background: var(--bg-2); border: 1px solid var(--edge); box-shadow: var(--glow-card); display: grid; gap: 12px; align-content: start; }
+.sfs-rules-col.is-never { border-color: color-mix(in srgb, var(--red) 40%, var(--line)); }
+.sfs-rules-col h2 { display: flex; align-items: center; gap: 10px; font-size: 15px; font-weight: 700; }
+.sfs-num { width: 24px; height: 24px; border-radius: 8px; display: grid; place-items: center; }
+.sfs-num.is-do { background: var(--accent-soft); color: var(--accent); }
+.sfs-num.is-never { background: var(--red-soft); color: var(--red-2); }
+.sfs-rules ol { margin: 0; padding-left: 22px; display: grid; gap: 8px; font-size: 13.5px; line-height: 1.5; color: var(--text); }
+.sfs-rules ol li::marker { color: var(--accent); font-weight: 700; }
+.sfs-rules ul { margin: 0; padding-left: 18px; display: grid; gap: 8px; font-size: 13.5px; line-height: 1.5; }
+.sfs-rules ul li::marker { color: var(--red-2); }
+.sfs-rules ul li:first-child { font-weight: 700; color: var(--red-2); }
+.sfs-facts { display: grid; gap: 6px; padding: 12px; border-radius: 12px; background: var(--bg-1); border: 1px solid var(--line); font-size: 12.5px; }
+.sfs-facts > div { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.sfs-facts span { color: var(--text-3); }
+.sfs-facts b { text-align: right; }
+.sfs-done { padding: 14px 16px; border-radius: 16px; background: color-mix(in srgb, var(--green) 10%, var(--bg-2)); border: 1px solid color-mix(in srgb, var(--green) 40%, transparent); display: grid; gap: 10px; }
+.sfs-done-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 13.5px; }
+.sfs-done-head svg { color: var(--green); }
+.sfs-done-head span { color: var(--text-2); flex: 1 1 auto; }
+.sfs-done-list { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: 12px; }
+.sfs-done-list > span { font-weight: 700; color: var(--green); margin-right: 4px; }
+.sfs-done-list.is-skip > span { color: var(--amber); }
+.sfs-done-list code { font-family: var(--font-mono); padding: 3px 8px; border-radius: 8px; background: var(--bg-1); border: 1px solid var(--line); }
+.sfs-tablewrap { border-radius: 18px; border: 1px solid var(--edge); overflow: auto; background: var(--bg-2); box-shadow: var(--glow-card); }
+.sfs-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 13.5px; }
+.sfs-table th { position: sticky; top: 0; z-index: 1; text-align: left; padding: 12px 14px; font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-3); background: color-mix(in srgb, var(--bg-1) 96%, transparent); border-bottom: 1px solid var(--line); white-space: nowrap; }
+.sfs-table td { padding: 12px 14px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.sfs-table tbody tr:nth-child(even) td { background: color-mix(in srgb, var(--bg-1) 40%, transparent); }
+.sfs-table tbody tr:hover td { background: var(--accent-soft); }
+.sfs-table tr.is-copied td { background: color-mix(in srgb, var(--green) 9%, transparent) !important; }
+.sfs-table tr.is-skipped td { background: color-mix(in srgb, var(--amber) 9%, transparent) !important; }
+.sfs-n { color: var(--text-3); font-family: var(--font-mono); width: 32px; }
+.sfs-tag { color: var(--accent); font-weight: 600; white-space: nowrap; }
+.sfs-mark { min-width: 196px; }
+.sfs-mark-btns { display: flex; gap: 6px; }
+.sfs-btn { display: inline-flex; align-items: center; gap: 5px; height: 30px; padding: 0 10px; border-radius: 9px; font-size: 12.5px; font-weight: 700; border: 1px solid var(--line-2); color: var(--text-2); background: var(--bg-1); transition: all var(--fast); }
+.sfs-btn:hover { color: var(--text); border-color: var(--text-3); }
+.sfs-btn.is-copy.is-on { background: var(--green); border-color: var(--green); color: #04140a; box-shadow: 0 0 16px -4px var(--green); }
+.sfs-btn.is-skip.is-on { background: var(--amber); border-color: var(--amber); color: #201400; box-shadow: 0 0 16px -4px var(--amber); }
+.sfs-reason { margin-top: 6px; height: 30px; font-size: 12.5px; }
+.sfs-prev { margin-top: 6px; font-size: 11.5px; color: var(--amber); }
+.sfs-svc { min-width: 190px; }
+.sfs-group { font-size: 11.5px; color: var(--text-3); font-weight: 600; }
+.sfs-service { font-weight: 700; }
+.sfs-pill { display: inline-block; margin-top: 4px; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 999px; }
+.sfs-pill.is-sugg { background: var(--violet-soft); color: var(--violet); }
+.sfs-pill.is-pick { background: var(--amber-soft); color: var(--amber); margin-top: 0; }
+.sfs-desc { min-width: 260px; max-width: 420px; }
+.sfs-tech { white-space: nowrap; font-weight: 600; }
+.sfs-when { white-space: nowrap; font-size: 12.5px; color: var(--text-2); }
+.sfs-copy { display: inline-flex; align-items: flex-start; gap: 6px; }
+.sfs-copy.is-block { display: flex; }
+.sfs-copy-text { white-space: pre-wrap; word-break: break-word; }
+.sfs-copy-btn { flex: none; width: 24px; height: 24px; border-radius: 7px; display: grid; place-items: center; color: var(--text-3); border: 1px solid transparent; opacity: 0.5; transition: all var(--fast); }
+tr:hover .sfs-copy-btn { opacity: 1; border-color: var(--line-2); }
+.sfs-copy-btn:hover { color: var(--accent); border-color: var(--accent) !important; }
+.sfs-empty { display: grid; place-items: center; gap: 6px; padding: 60px 20px; text-align: center; border-radius: 18px; border: 1px dashed var(--line-2); color: var(--text-2); }
+.sfs-empty svg { color: var(--green); }
+.sfs-empty b { font-size: 18px; color: var(--text); }
+.sfs-foot { display: flex; align-items: center; gap: 12px; padding: 14px 28px; border-top: 1px solid var(--line); background: color-mix(in srgb, var(--bg-1) 94%, transparent); }
+.sfs-progress { flex: 1 1 auto; display: flex; align-items: center; gap: 14px; font-size: 13px; color: var(--text-2); min-width: 0; }
+.sfs-progress b { color: var(--text); }
+.sfs-bar { display: flex; width: min(320px, 40%); height: 8px; border-radius: 99px; background: var(--bg-4); overflow: hidden; flex: none; }
+.sfs-bar i { display: block; height: 100%; transition: width 300ms var(--ease); }
+.sfs-bar i.is-copy { background: var(--green); } .sfs-bar i.is-skip { background: var(--amber); }
+@media (max-width: 1100px) { .sfs-rules { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 700px) { .sfs-head, .sfs-body, .sfs-foot { padding-left: 14px; padding-right: 14px; } .sfs-head { flex-wrap: wrap; } .sfs-bar { display: none; } }
+/* the sheet's body scrolls as one column; the table keeps its full height */
+.sfs-body { display: flex; flex-direction: column; }
+.sfs-body > * { flex: none; }
+.sfs-tablewrap { overflow-x: auto; overflow-y: visible; }
+.sfs-table th { top: 0; }
+.sfs-table td.mono, .sfs-table td.mono .sfs-copy-text { white-space: nowrap; }
+.sfs-table td:nth-child(5) { min-width: 120px; }

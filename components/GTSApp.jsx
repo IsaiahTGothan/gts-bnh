@@ -27,6 +27,8 @@ import AssignmentsTab from './AssignmentsTab';
 import { Decode, MatrixRain } from './matrix';
 import { inferFromDescription, serviceCatalog } from '../lib/sf-services';
 import { ThemeButton } from './ThemePicker';
+import SalesforceSheet from './SalesforceSheet';
+import { SHEET_HASH } from '../lib/sf-sheet';
 import { ACCENT_VAR_NAMES, accentHex, accentVars, resolveAccent } from '../lib/theme';
 import ScanModal from './ScanModal';
 import PromoStage from './PromoStage';
@@ -309,6 +311,22 @@ function useGTSStore() {
     opsSaveReview: (review, summary) => mutate((p) => act({ ...p, opsReviews: upsertById(p.opsReviews || [], [review]) }, 'ops.review', review.orderKey ? `Order ${review.orderKey}` : 'Ops review', summary || review.status)),
     opsSetResults: (results, summary) => mutate((p) => act({ ...p, opsResults: results }, 'ops.results', 'Clawson results', summary || 'Imported')),
     opsSaveReport: (report) => mutate((p) => act({ ...p, opsReports: upsertById(p.opsReports || [], [report]) }, 'ops.report', `EOD ${report.day}`, report.synthetic ? 'End-of-day report saved (synthetic data)' : 'End-of-day report saved')),
+    // V5.1: Salesforce copy sheet — Copied rows become "pushed", Skipped rows stay open with the reason
+    sfSheetConfirm: ({ copied = [], skipped = [] }) => {
+      const cur = stateRef.current; const ts = nowISO(); const me = cur.settings.currentTech;
+      const cp = new Set(copied); const sk = new Map(skipped.map((x) => [x.id, x.reason]));
+      mutate((p) => {
+        const tickets = p.tickets.map((t) => {
+          if (cp.has(t.id) && t.status === 'open') return stamp(t, { status: 'logged', loggedAt: ts, loggedBy: me, sfPushedVia: 'sheet', sfSkipReason: null, sfSkippedAt: null });
+          if (sk.has(t.id)) return stamp(t, { sfSkipReason: sk.get(t.id), sfSkippedAt: ts });
+          return t;
+        });
+        const tags = (ids) => p.tickets.filter((t) => ids.includes(t.id)).map((t) => t.tag).join(', ');
+        return act({ ...p, tickets }, 'ticket.sfsheet', 'Salesforce copy sheet', `${copied.length} copied${copied.length ? ` (${tags(copied)})` : ''} · ${skipped.length} skipped${skipped.length ? ` (${tags(skipped.map((x) => x.id))})` : ''}`);
+      });
+    },
+    sfSheetUndo: (ids) => mutate((p) => act({ ...p, tickets: p.tickets.map((t) => (ids.includes(t.id) && t.sfPushedVia === 'sheet' && t.status === 'logged' ? stamp(t, { status: 'open', loggedAt: null, loggedBy: null, sfPushedVia: null }) : t)) }, 'ticket.sfsheet', 'Salesforce copy sheet', `Undo — ${ids.length} back to open`)),
+
     // V4.4: re-sort old Other / untyped tickets in one go (Management → System → Services)
     retypeTickets: (changes) => mutate((p) => {
       const by = new Map(changes.map((c) => [c.id, c]));
@@ -773,6 +791,17 @@ export default function GTSApp() {
   const closeModal = useCallback(() => setModal(null), []);
   const openUnixScan = useCallback((ticketId) => setModal({ type: 'unix', props: { ticketId } }), []);
   const openScanner = useCallback((code, format) => setModal({ type: 'scan', props: { code: code || null, format: format || '' } }), []);
+  // V5.1 Salesforce copy sheet — also opens straight from the link gts-hub…/#salesforce-sheet (for the bot)
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const openSfSheet = useCallback(() => setSheetOpen(true), []);
+  const closeSfSheet = useCallback(() => { setSheetOpen(false); if (window.location.hash === SHEET_HASH) history.replaceState(null, '', window.location.pathname + window.location.search); }, []);
+  useEffect(() => {
+    const check = () => { if (window.location.hash === SHEET_HASH) setSheetOpen(true); };
+    check();
+    window.addEventListener('hashchange', check);
+    return () => window.removeEventListener('hashchange', check);
+  }, []);
+  useEffect(() => { if (sheetOpen && window.location.hash !== SHEET_HASH) history.replaceState(null, '', SHEET_HASH); }, [sheetOpen]);
 
   // ── scanner gun (keyboard wedge): a fast burst + Enter anywhere = a scan ──
   //    Typed into the Quick Log order field or into nothing → open the scan
@@ -933,10 +962,10 @@ export default function GTSApp() {
     state, api, now, toast, sfx, sync, connections, goal, isManager, can, features, warrantyBrands, openWarranty, warrantyPick, setWarrantyPick, emitRef, fireHype, accent,
     tab, goTo, homeTab, setHomeTab, fwView, setFwView,
     openAssignment, openTicket, openInventory, openRef, newAssignment, newTicket, confirm, highlight, openUnixScan,
-    openPalette: () => setPalette(true), openShortcuts: () => setModal({ type: 'shortcuts' }), openAbout: () => setModal({ type: 'about' }),
+    openSfSheet, openPalette: () => setPalette(true), openShortcuts: () => setModal({ type: 'shortcuts' }), openAbout: () => setModal({ type: 'about' }),
     openWhatsNew: () => setModal({ type: 'whatsnew' }), openTechPicker: () => setModal({ type: 'tech' }), openMore: () => setModal({ type: 'more' }),
     counts,
-  }), [accent, openScanner, state, api, now, toast, sfx, sync, connections, goal, isManager, can, features, warrantyBrands, openWarranty, warrantyPick, emitRef, fireHype, tab, goTo, homeTab, fwView, openAssignment, openTicket, openInventory, openRef, newAssignment, newTicket, confirm, highlight, openUnixScan, counts]);
+  }), [openSfSheet, accent, openScanner, state, api, now, toast, sfx, sync, connections, goal, isManager, can, features, warrantyBrands, openWarranty, warrantyPick, emitRef, fireHype, tab, goTo, homeTab, fwView, openAssignment, openTicket, openInventory, openRef, newAssignment, newTicket, confirm, highlight, openUnixScan, counts]);
 
   // warm the split-out tabs once the counter screen is up and idle
   useEffect(() => {
@@ -1020,6 +1049,7 @@ export default function GTSApp() {
       {modal?.type === 'more' && <MoreSheet onClose={closeModal} />}
       {modal?.type === 'unix' && <UnixScanModal ticketId={modal.props?.ticketId} onClose={closeModal} />}
       {promoId && <PromoStage ticketId={promoId} onClose={() => setPromoId(null)} onSwitch={setPromoId} />}
+      {sheetOpen && <SalesforceSheet onClose={closeSfSheet} />}
       {modal?.type === 'scan' && <ScanModal key={modal.props?.code || 'scan'} initialCode={modal.props?.code} initialFormat={modal.props?.format} onClose={closeModal} />}
       {!state.settings.onboarded && !modal && !booting && <TechPickerModal onClose={() => api.setSettings({ onboarded: true })} first />}
       {showWhatsNew && <WhatsNewModal onClose={() => api.setSettings({ whatsNewSeen: APP_MAJOR })} first />}
@@ -1493,7 +1523,7 @@ function AboutModal({ onClose }) {
 //  COMMAND PALETTE (⌘K)
 // ═══════════════════════════════════════════════════════════════════════════
 function CommandPalette({ onClose }) {
-  const { state, api, goTo, openAssignment, openTicket, openInventory, newAssignment, newTicket, toast, sfx, openWhatsNew, warrantyBrands, openWarranty, openScanner } = useStore();
+  const { state, api, goTo, openAssignment, openTicket, openInventory, newAssignment, newTicket, toast, sfx, openWhatsNew, warrantyBrands, openWarranty, openScanner, openSfSheet } = useStore();
   const [q, setQ] = useState('');
   const [idx, setIdx] = useState(0);
   const inputRef = useRef(null);
@@ -1504,6 +1534,7 @@ function CommandPalette({ onClose }) {
     const cmd = (label, icon, run, hint) => out.push({ group: 'Actions', label, icon, run, hint });
     if (matches(q, 'new assignment intake overnight drop off check in')) cmd('New overnight assignment', 'plus', () => newAssignment(), 'N');
     if (matches(q, 'new ticket salesforce log appointment quick')) cmd('Quick log a ticket', 'zap', () => newTicket(), 'T');
+    if (matches(q, 'salesforce copy sheet bot push open tickets excel')) cmd('Salesforce copy sheet', 'send', () => openSfSheet());
     for (const t of TABS) if (matches(q, `go ${t.label} tab`)) cmd(`Go to ${t.label}`, t.icon, () => goTo(t.id));
     if (matches(q, 'settings tech switch')) cmd('Open Settings', 'settings', () => goTo('home', 'settings'));
     if (matches(q, 'stats numbers report goal')) cmd('Open Stats', 'activity', () => goTo('stats'));
