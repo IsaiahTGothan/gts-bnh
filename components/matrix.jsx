@@ -23,17 +23,23 @@ export function MatrixRain({ className, opacity = 0.25, fontSize = 15, speed = 1
     const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
     let cols = 0; let drops = []; let w = 0; let h = 0; let raf = 0; let last = 0; let tint = color || cssColor('--accent', '#22d3ee');
-    const size = () => {
-      const r = canvas.getBoundingClientRect();
-      w = Math.max(1, r.width); h = Math.max(1, r.height);
+    // Resize only when the box really changed (re-allocating the canvas clears it), keep the
+    // drops that are already falling, and never re-read CSS here: a layout shift (a ticket
+    // added, a toast) would otherwise force a full style recalculation mid-update.
+    const newDrop = () => ({ y: Math.random() * -h, v: (0.5 + Math.random() * 0.9) * speed, len: 8 + ((Math.random() * 18) | 0), chars: [] });
+    const size = (entries) => {
+      const box = entries?.[0]?.contentRect;
+      const nw = Math.max(1, Math.round(box ? box.width : canvas.getBoundingClientRect().width));
+      const nh = Math.max(1, Math.round(box ? box.height : canvas.getBoundingClientRect().height));
+      if (nw === w && nh === h) return;
+      w = nw; h = nh;
       canvas.width = w * dpr; canvas.height = h * dpr; ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       cols = Math.ceil(w / fontSize);
-      drops = Array.from({ length: cols }, () => ({ y: Math.random() * -h, v: (0.5 + Math.random() * 0.9) * speed, len: 8 + ((Math.random() * 18) | 0), chars: [] }));
-      tint = color || cssColor('--accent', '#22d3ee');
+      drops = drops.length >= cols ? drops.slice(0, cols) : [...drops, ...Array.from({ length: cols - drops.length }, newDrop)];
     };
     const ro = new ResizeObserver(size); ro.observe(canvas); size();
-    const themeObs = new MutationObserver(() => { tint = color || cssColor('--accent', '#22d3ee'); });
-    themeObs.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme', 'data-zone'] });
+    const themeObs = new MutationObserver(() => { requestAnimationFrame(() => { tint = color || cssColor('--accent', '#22d3ee'); }); });
+    themeObs.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme', 'data-zone', 'data-accent', 'style'] });
     const frame = (t) => {
       raf = requestAnimationFrame(frame);
       if (document.hidden || t - last < (reduce ? 120 : 45)) return;

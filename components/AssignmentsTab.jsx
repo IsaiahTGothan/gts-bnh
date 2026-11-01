@@ -143,12 +143,12 @@ function AsgCard({ a, i, now, th, dragging, onDragStart, onDragEnd }) {
       draggable onDragStart={(e) => { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', a.id); onDragStart(); }} onDragEnd={onDragEnd}
       onClick={() => openAssignment(a.id)} role="button" tabIndex={0} onKeyDown={(e) => { if (e.key === 'Enter') openAssignment(a.id); }}>
       <div className="asg-head">
-        <div style={{ minWidth: 0 }}>
-          <div className="row" style={{ gap: 6 }}><span className="tag">{a.tag}</span>{a.demo && <Chip size="sm">DEMO</Chip>}</div>
-          <div className="asg-name truncate">{a.customerName}</div>
-          <div className="asg-device truncate"><ServiceIcon type={a.serviceType} />{a.deviceDesc || serviceLabel(a.serviceType)}</div>
-        </div>
+        <div className="row" style={{ gap: 6, minWidth: 0 }}><span className="tag">{a.tag}</span>{a.demo && <Chip size="sm">demo</Chip>}</div>
         <AgeBadge receivedAt={a.receivedAt} threshold={th} now={now} />
+      </div>
+      <div style={{ minWidth: 0 }}>
+        <div className="asg-name truncate">{a.customerName}</div>
+        <div className="asg-device"><ServiceIcon type={a.serviceType} /><span className="truncate">{a.deviceDesc || serviceLabel(a.serviceType)}</span></div>
       </div>
       {a.issue && <p className="asg-issue">{a.issue}</p>}
       {a.status === 'waiting' && a.waitReason && <div className="row" style={{ gap: 6, fontSize: 12, color: 'var(--amber)' }}><Icon name="clock" size={12} />{a.waitReason}</div>}

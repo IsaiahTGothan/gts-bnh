@@ -13,7 +13,7 @@ import { PICK_TYPES, SERVICE_BY_ID, SERVICE_TYPES, TECHS, serviceLabel, techName
 import { sameFamily } from '../lib/sf-services';
 import ServiceInput from './ServiceInput';
 import { sfPushTicket } from '../lib/salesforce';
-import { computeStats, fmtPct } from '../lib/stats';
+import { computeStats, fmtPct, logSpeed } from '../lib/stats';
 import { fmtClock, fmtDur, maskName, serviceMs, serviceState, serviceTarget } from '../lib/service';
 import { brandById } from '../lib/warranty';
 import { copyText, cx, dayKey, downloadText, fmtDateTime, isToday, matches, relTime, toCSV } from '../lib/utils';
@@ -130,7 +130,7 @@ export default function SalesforceTab() {
   // only the data stats read — typing a setting or a sync stamp doesn't redo 30 days of maths
   const statDeps = [state.tickets, state.assignments, state.queue, state.management, state.team, state.settings.overdueDays, now];
   const st = useMemo(() => computeStats(state, { days: 1, now }), statDeps); // eslint-disable-line react-hooks/exhaustive-deps
-  const speed30 = useMemo(() => computeStats(state, { days: 30, now }).speed, statDeps); // eslint-disable-line react-hooks/exhaustive-deps
+  const speed30 = useMemo(() => logSpeed(state, { days: 30, now }), [state.tickets, now]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Push to Salesforce: real Case when the connector is set up, flag otherwise
   const push = async (t) => {
@@ -273,7 +273,7 @@ export function QuickLogWindow({ prefill, onClose, onSaved, onConvert, onUnix })
 }
 
 function QuickLogStage({ prefill, onPrefillUsed, onConvert, onUnix, inModal, onSaved, onClose }) {
-  const { state, api, toast, sfx, features, warrantyBrands, openScanner } = useStore();
+  const { state, api, toast, sfx, features, warrantyBrands, openScanner, accent } = useStore();
   const m = state.management || {};
   const effects = state.settings.effects || 'auto';
   const sceneOn = features.scene3d !== false && effects !== 'off';
@@ -318,7 +318,7 @@ function QuickLogStage({ prefill, onPrefillUsed, onConvert, onUnix, inModal, onS
   const brand = d.serviceType === 'warranty' ? brandById(warrantyBrands, d.warrantyBrand) : null;
   const matrix = state.settings.theme === 'matrix';
   const rgb = !!state.settings.rgb;
-  const tint = brand?.color && brand.color !== '#000000' ? brand.color : SERVICE_BY_ID[d.serviceType]?.color || (matrix ? '#00ff8c' : '#22d3ee');
+  const tint = brand?.color && brand.color !== '#000000' ? brand.color : SERVICE_BY_ID[d.serviceType]?.color || accent;
   const digits = d.orderNumber.replace(/\D/g, '').length;
   useEffect(() => { sceneApi.current?.setProgress(digits); }, [digits]);
 

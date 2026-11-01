@@ -18,6 +18,45 @@ Built with Next.js (App Router) + React, a hand-rolled design system (no UI libr
 
 ---
 
+## What’s new in V5
+
+* **Pick your colour.** The **Look** button in the top bar (or Home → Settings → Appearance) has:
+  * **Theme:** Dark / Light / Matrix.
+  * **Colour:** 9 accents — Cyan, B&H green, Blue, Violet, Pink, Red, Orange, Gold, Silver — plus **any colour** from a picker.
+  * **Glow:** Soft / Normal / Max.
+  * **RGB wave**, which still works on top of any colour.
+
+  One choice recolours everything: buttons, glows, charts, focus rings, the sidebar, the Quick Log 3D core and the digital rain (Matrix included). It's saved per station. A manager can make the colour the team default for every station that hasn't picked its own.
+* **Redesigned shell.**
+  * The sidebar is grouped into **Counter · Insights · Tools · Admin**, with a live **goal bar** (today vs the daily goal) at the bottom.
+  * New top bar: the page with a glowing icon, a compact live pulse, and Look / RGB / Quick log.
+  * An aurora background in your accent colour replaces the grid lines (the Matrix theme keeps its grid).
+* **New card language.** Every card has a gradient edge that glows in your colour, larger radius, bolder numbers, and an accent glow on hover.
+  * Home’s *Today at the counter* is an even grid of six stats.
+  * The Assignments board fits all five columns, with full-width names and devices.
+  * Labels are Inter small caps (Matrix keeps mono).
+  * Focus rings are visible everywhere.
+* **Fixes.**
+  * Pulsing dots drew as rectangles.
+  * Phones scrolled sideways on Assignments, and the top bar overflowed on 1024–1280 px screens.
+  * Toasts covered the bulk-action bar.
+  * The Matrix rain restarted on every layout shift.
+* **Faster on slow PCs.** Measured with 3,000 tickets and the CPU slowed 4×, against 4.4:
+
+  | | 4.4 | 5.0 |
+  |---|---|---|
+  | Typing (10 keys, main thread blocked) | ~500 ms | ~200 ms |
+  | Saving a ticket | ~1.0 s | ~0.54 s |
+  | Opening Quick Log | ~1.05 s | ~0.7 s |
+  | Opening Stats | ~380 ms | ~110 ms |
+
+  What changed:
+  * Secondary tabs are split out of the startup bundle (296 kB → 237 kB) and preloaded one at a time in idle time.
+  * Off-screen ticket cards are skipped (`content-visibility`), and the stage is CSS-contained.
+  * Quick Log no longer runs the full 30-day stats for one number.
+  * Stats and goal only recompute when ticket data changes.
+  * The service list repositions on scroll/resize instead of every frame, and the rain stops forcing style recalculation.
+
 ## What’s new in V4
 
 * **Salesforce services (4.4)**: the description is now one short line that searches the 77 verified GTS services from Salesforce as you type.

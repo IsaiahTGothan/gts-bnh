@@ -10,7 +10,17 @@ import { checkOn } from '../lib/store';
 import { computeStats } from '../lib/stats';
 import { fmtDur } from '../lib/service';
 import { onlineOthers, useStore } from './GTSApp';
+import { AppearanceControls } from './ThemePicker';
 import { AgeBadge, Avatar, BarList, Btn, Chip, Donut, EmptyState, Field, HoverChart, Icon, Input, KPI, Panel, Ring, Segmented, Select, StatusChip, Toggle } from './ui';
+
+function HeroStat({ value, of, label }) {
+  return (
+    <div className="hero-stat">
+      <b>{value}{of != null && <small>/{of}</small>}</b>
+      <span>{label}</span>
+    </div>
+  );
+}
 
 export default function HomeTab() {
   const { homeTab, setHomeTab, counts } = useStore();
@@ -57,8 +67,10 @@ function Overview() {
   const ready = active.filter((a) => a.status === 'ready');
   const doneToday = live.filter((a) => a.pickedUpAt && isToday(a.pickedUpAt, now)).length + tickets.filter((t) => t.loggedAt && isToday(t.loggedAt, now)).length;
   const avgHold = active.length ? active.reduce((s, a) => s + (now - new Date(a.receivedAt).getTime()), 0) / active.length / 3600_000 : 0;
-  const stats7 = useMemo(() => computeStats(state, { days: 14, now }), [state, now]);
-  const todayStats = useMemo(() => computeStats(state, { days: 1, now }), [state, now]);
+  // recompute only when the data stats read changes (not on a setting toggle or a sync stamp)
+  const statDeps = [state.tickets, state.assignments, state.queue, state.management, state.team, state.settings.overdueDays, now];
+  const stats7 = useMemo(() => computeStats(state, { days: 14, now }), statDeps); // eslint-disable-line react-hooks/exhaustive-deps
+  const todayStats = useMemo(() => computeStats(state, { days: 1, now }), statDeps); // eslint-disable-line react-hooks/exhaustive-deps
   const todayTk = tickets.filter((t) => isToday(t.createdAt, now));
   const todayPushed = todayTk.filter((t) => t.loggedAt).length;
   const todayOrders = todayTk.filter((t) => t.orderNumber);
@@ -90,25 +102,29 @@ function Overview() {
       <section className="hero corners-neon">
         <i className="corner tl" /><i className="corner tr" /><i className="corner bl" /><i className="corner br" />
         <div className="hero-main">
-          <div className="eyebrow">Today at the counter</div>
-          <div className="hero-numbers">
-            <div className="hero-num"><b>{goal?.today ?? 0}</b><span>customers<br />served</span></div>
-            <div className="hero-num"><b>{todayPushed}<small>/{todayTk.length}</small></b><span>pushed to<br />Salesforce</span></div>
-            <div className="hero-num"><b>{todayUnix}<small>/{todayOrders.length}</small></b><span>orders in<br />UNIX</span></div>
-            <div className="hero-num"><b>{goal?.thisHour ?? 0}<small>{goal?.perHourToday != null ? ` · ${goal.perHourToday.toFixed(1)}/h` : ''}</small></b><span>customers<br />this hour</span></div>
-            <div className="hero-num"><b>{todayStats.service.samples ? fmtDur(todayStats.service.avgMs) : '—'}</b><span>avg service<br />time today</span></div>
-            <div className="hero-num"><b>{speed.samples ? `${speed.avgLogSeconds.toFixed(1)}s` : '—'}</b><span>avg time<br />to log</span></div>
+          <div className="hero-top">
+            <div className="eyebrow">Today at the counter</div>
+            <div className="row wrap" style={{ gap: 6 }}>
+              {counts.inService > 0 && <Chip size="sm" tone="accent" icon="timer" onClick={() => goTo('salesforce')}>{counts.inService} in service</Chip>}
+              {counts.waiting > 0 && <Chip size="sm" tone="violet" icon="users" onClick={() => goTo('salesforce')}>{counts.waiting} waiting</Chip>}
+              {needsUnix > 0 && <Chip size="sm" tone="amber" icon="hash" onClick={() => goTo('salesforce')}>{needsUnix} not in UNIX</Chip>}
+              {!state.settings.currentTech && <Chip size="sm" tone="amber" icon="alert-circle">Pick your name</Chip>}
+              {state.settings.demoLoaded && <Chip size="sm" tone="violet" icon="sparkles">Demo data</Chip>}
+              {sync.status === 'idle' && sync.live && <Chip size="sm" tone="green" icon="zap">Live board</Chip>}
+            </div>
           </div>
-          <div className="row wrap" style={{ gap: 8, marginTop: 14 }}>
+          <div className="hero-stats">
+            <HeroStat value={goal?.today ?? 0} label="Customers served" />
+            <HeroStat value={todayPushed} of={todayTk.length} label="Pushed to Salesforce" />
+            <HeroStat value={todayUnix} of={todayOrders.length} label="Orders in UNIX" />
+            <HeroStat value={goal?.thisHour ?? 0} label={goal?.perHourToday != null ? `This hour · ${goal.perHourToday.toFixed(1)}/h today` : 'This hour'} />
+            <HeroStat value={todayStats.service.samples ? fmtDur(todayStats.service.avgMs) : '—'} label="Avg service time" />
+            <HeroStat value={speed.samples ? `${speed.avgLogSeconds.toFixed(1)}s` : '—'} label="Avg time to log" />
+          </div>
+          <div className="hero-actions">
             <Btn variant="primary" icon="zap" onClick={() => newTicket()}>Quick log</Btn>
             <Btn icon="plus" onClick={() => newAssignment()}>Check in device</Btn>
             <Btn variant="ghost" icon="handoff" onClick={() => goTo('station')}>Shift handoff</Btn>
-            {counts.inService > 0 && <Chip tone="accent" icon="timer" onClick={() => goTo('salesforce')}>{counts.inService} in service</Chip>}
-            {counts.waiting > 0 && <Chip tone="violet" icon="users" onClick={() => goTo('salesforce')}>{counts.waiting} waiting</Chip>}
-            {needsUnix > 0 && <Chip tone="amber" icon="hash" onClick={() => goTo('salesforce')}>{needsUnix} order{needsUnix > 1 ? 's' : ''} not in UNIX</Chip>}
-            {!state.settings.currentTech && <Chip tone="amber" icon="alert-circle">No tech selected — pick yours</Chip>}
-            {state.settings.demoLoaded && <Chip tone="violet" icon="sparkles">Demo data loaded</Chip>}
-            {sync.status === 'idle' && sync.live && <Chip tone="green" icon="zap">Live board</Chip>}
           </div>
         </div>
         <div className="hero-goal" onClick={() => goTo('stats')} role="button" tabIndex={0} title="Open Stats">
@@ -372,13 +388,9 @@ function Settings() {
             <div><div className="setting-title">Counter phone</div><div className="setting-desc">Printed on claim tickets so customers can call back.</div></div>
             <Input value={s.counterPhone} onChange={(e) => set({ counterPhone: e.target.value })} placeholder="(212) 555-0100" style={{ width: 180 }} className="mono" />
           </div>
-          <div className="setting">
-            <div><div className="setting-title">Theme</div><div className="setting-desc">Dark is the console look, light suits a bright counter, Matrix goes full green-phosphor with digital rain.</div></div>
-            <Segmented value={s.theme} onChange={(v) => set({ theme: v })} options={[{ id: 'dark', label: 'Dark', icon: 'moon' }, { id: 'light', label: 'Light', icon: 'sun' }, { id: 'matrix', label: 'Matrix', icon: 'terminal' }]} />
-          </div>
-          <div className="setting">
-            <div><div className="setting-title">RGB mode</div><div className="setting-desc">Rainbow wave on the main buttons and the 3D stage. Press <kbd className="kbd">R</kbd> anywhere. Turns on by itself for a few seconds when the daily goal is hit.</div></div>
-            <Toggle on={!!s.rgb} onChange={(v) => set({ rgb: v })} label="RGB mode" />
+          <div className="setting is-wide">
+            <div><div className="setting-title">Appearance</div><div className="setting-desc">Theme, accent colour, glow and the RGB wave — this station only (a manager can make the colour the team default). Also in the top bar under <b>Look</b>; <kbd className="kbd">R</kbd> toggles RGB.</div></div>
+            <AppearanceControls />
           </div>
           <div className="setting">
             <div><div className="setting-title">3D Quick Log stage</div><div className="setting-desc">On this device. Calm uses fewer particles; Off shows a static glow.</div></div>

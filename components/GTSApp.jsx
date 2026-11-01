@@ -6,8 +6,8 @@
 //  assignment drawer, command palette, toasts, shortcuts) and keyboard
 //  shortcuts. Tabs live in their own files.
 // ═══════════════════════════════════════════════════════════════════════════
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { APP_MAJOR, APP_VERSION, ASG_STATUS_BY_ID, FIRMWARE_VIEWS, MOBILE_TABS, TABS, TECHS, TECH_BY_ID, TECH_COLORS, initialsOf, isTerminal, serviceLabel, syncTeam, techName } from '../lib/constants';
+import React, { Suspense, createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { APP_MAJOR, APP_VERSION, ASG_STATUS_BY_ID, FIRMWARE_VIEWS, MOBILE_TABS, TAB_GROUPS, TABS, TECHS, TECH_BY_ID, TECH_COLORS, initialsOf, isTerminal, serviceLabel, syncTeam, techName } from '../lib/constants';
 import { goalInfo } from '../lib/stats';
 import { connectionsStatus } from '../lib/salesforce';
 import { buildDemoData, checkOn, defaultState, exportJSON, loadState, mergeStates, migrate, parseImport, saveState, sharedSignature } from '../lib/store';
@@ -22,17 +22,12 @@ import { allWarrantyBrands } from '../lib/warranty';
 import { UnixScanModal } from './UnixScan';
 import { Avatar, Btn, Chip, ConfirmDialog, GTSLogo, GTSMark, Icon, Kbd, Modal, Ring, ZaysLogo } from './ui';
 import HomeTab from './HomeTab';
-import StatsTab from './StatsTab';
-import ManagementTab from './ManagementTab';
 import SalesforceTab, { QuickLogWindow } from './SalesforceTab';
 import AssignmentsTab from './AssignmentsTab';
-import CatalogTab from './CatalogTab';
-import StationTab from './StationTab';
-import FirmwareTab from './FirmwareTab';
 import { Decode, MatrixRain } from './matrix';
-import WarrantyTab from './WarrantyTab';
-import OpsTab from './OpsTab';
 import { inferFromDescription, serviceCatalog } from '../lib/sf-services';
+import { ThemeButton } from './ThemePicker';
+import { ACCENT_VAR_NAMES, accentHex, accentVars, resolveAccent } from '../lib/theme';
 import ScanModal from './ScanModal';
 import PromoStage from './PromoStage';
 import { createWedge } from '../lib/scan';
@@ -48,6 +43,18 @@ const ACTIVITY_CAP = 400;
 //  STORE HOOK — every mutation goes through here so it can stamp
 //  updatedAt, attribute the tech and append to the activity feed.
 // ═══════════════════════════════════════════════════════════════════════════
+// Tabs you don't open first are split out of the startup bundle, then preloaded in idle
+// time after the app is up — so the first paint is lighter and switching stays instant.
+const lazyTab = (load) => { const C = React.lazy(load); C.preload = load; return C; };
+const StatsTab = lazyTab(() => import('./StatsTab'));
+const ManagementTab = lazyTab(() => import('./ManagementTab'));
+const CatalogTab = lazyTab(() => import('./CatalogTab'));
+const StationTab = lazyTab(() => import('./StationTab'));
+const FirmwareTab = lazyTab(() => import('./FirmwareTab'));
+const WarrantyTab = lazyTab(() => import('./WarrantyTab'));
+const OpsTab = lazyTab(() => import('./OpsTab'));
+const LAZY_TABS = [StatsTab, ManagementTab, CatalogTab, StationTab, FirmwareTab, WarrantyTab, OpsTab];
+
 /** Description edited → refresh its Salesforce service path (and fill an empty type from it). */
 function withServicePath(t, patch, management) {
   if (patch.description === undefined || patch.sfService !== undefined) return patch;
@@ -108,11 +115,17 @@ function useGTSStore() {
     return () => { window.removeEventListener('pagehide', flush); document.removeEventListener('visibilitychange', flush); };
   }, []);
 
-  // theme
+  // theme + accent colour (per device, falling back to the team default)
+  const accentChoice = state ? resolveAccent(state.settings, state.management) : null;
   useEffect(() => {
     if (!state) return;
-    document.documentElement.setAttribute('data-theme', state.settings.theme || 'dark');
-  }, [state?.settings.theme]);
+    const root = document.documentElement;
+    root.setAttribute('data-theme', state.settings.theme || 'dark');
+    const vars = accentVars(accentChoice, state.settings.theme);
+    for (const k of ACCENT_VAR_NAMES) { if (vars[k]) root.style.setProperty(k, vars[k]); else root.style.removeProperty(k); }
+    if (accentChoice) root.setAttribute('data-accent', 'custom'); else root.removeAttribute('data-accent');
+    root.setAttribute('data-glow', state.settings.glow || 'normal');
+  }, [state?.settings.theme, state?.settings.glow, accentChoice]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const mutate = useCallback((fn) => setState((prev) => (prev ? fn(prev) : prev)), []);
 
@@ -844,7 +857,7 @@ export default function GTSApp() {
     };
   }, [state, now]);
 
-  const goal = useMemo(() => (state ? goalInfo(state, now) : null), [state, now]);
+  const goal = useMemo(() => (state ? goalInfo(state, now) : null), [state?.tickets, state?.assignments, state?.management, now]); // eslint-disable-line react-hooks/exhaustive-deps
   const isManager = !!state && (state.management?.pinHash ? !!state.settings.managerUnlocked : true);
   const features = state?.management?.features || {};
   const perms = state?.management?.perms || {};
@@ -914,15 +927,27 @@ export default function GTSApp() {
     if (n) toast(`Privacy: ${n} old record${n === 1 ? '' : 's'} anonymised`, { tone: 'info' });
   }, [!!state, purgeDays]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const accent = state ? accentHex(state.settings, state.management) : '#22d3ee';
   const ctx = useMemo(() => ({
     openScanner,
-    state, api, now, toast, sfx, sync, connections, goal, isManager, can, features, warrantyBrands, openWarranty, warrantyPick, setWarrantyPick, emitRef, fireHype,
+    state, api, now, toast, sfx, sync, connections, goal, isManager, can, features, warrantyBrands, openWarranty, warrantyPick, setWarrantyPick, emitRef, fireHype, accent,
     tab, goTo, homeTab, setHomeTab, fwView, setFwView,
     openAssignment, openTicket, openInventory, openRef, newAssignment, newTicket, confirm, highlight, openUnixScan,
     openPalette: () => setPalette(true), openShortcuts: () => setModal({ type: 'shortcuts' }), openAbout: () => setModal({ type: 'about' }),
     openWhatsNew: () => setModal({ type: 'whatsnew' }), openTechPicker: () => setModal({ type: 'tech' }), openMore: () => setModal({ type: 'more' }),
     counts,
-  }), [openScanner, state, api, now, toast, sfx, sync, connections, goal, isManager, can, features, warrantyBrands, openWarranty, warrantyPick, emitRef, fireHype, tab, goTo, homeTab, fwView, openAssignment, openTicket, openInventory, openRef, newAssignment, newTicket, confirm, highlight, openUnixScan, counts]);
+  }), [accent, openScanner, state, api, now, toast, sfx, sync, connections, goal, isManager, can, features, warrantyBrands, openWarranty, warrantyPick, emitRef, fireHype, tab, goTo, homeTab, fwView, openAssignment, openTicket, openInventory, openRef, newAssignment, newTicket, confirm, highlight, openUnixScan, counts]);
+
+  // warm the split-out tabs once the counter screen is up and idle
+  useEffect(() => {
+    if (!state || booting) return undefined;
+    // one tab per idle moment, starting a few seconds after boot, so it never lands on typing
+    const idle = window.requestIdleCallback || ((fn) => setTimeout(fn, 300));
+    let cancelled = false; let t = 0;
+    const next = (i) => { if (cancelled || i >= LAZY_TABS.length) return; idle(() => { if (cancelled) return; LAZY_TABS[i].preload().catch(() => {}).finally(() => { t = setTimeout(() => next(i + 1), 400); }); }, { timeout: 5000 }); };
+    t = setTimeout(() => next(0), 6000);
+    return () => { cancelled = true; clearTimeout(t); };
+  }, [!!state, booting]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── server / pre-hydration render ────────────────────────────────────
   if (!state || booting) return <BootSplash leaving={leaving} />;
@@ -943,6 +968,7 @@ export default function GTSApp() {
           <BroadcastBar />
           <main className="main" key={tab}>
             <div className="tabpane">
+              <Suspense fallback={<TabLoading />}>
               {tab === 'home' && <HomeTab />}
               {tab === 'salesforce' && <SalesforceTab />}
               {tab === 'assignments' && <AssignmentsTab />}
@@ -953,6 +979,7 @@ export default function GTSApp() {
               {tab === 'warranty' && <WarrantyTab />}
               {tab === 'ops' && <OpsTab />}
               {tab === 'management' && <ManagementTab />}
+              </Suspense>
             </div>
           </main>
           <Footer />
@@ -1022,7 +1049,7 @@ function BootSplash({ leaving }) {
         <GTSMark size={84} />
         <div style={{ textAlign: 'center' }}>
           <div className="brand-name" style={{ fontSize: 18, letterSpacing: '0.06em' }}>GUEST TECHNICAL SERVICES</div>
-          <div className="brand-sub" style={{ marginTop: 6 }}>GTS HUB · <span className="boot-v3">V4</span> · BUILT FOR THE COUNTER</div>
+          <div className="brand-sub" style={{ marginTop: 6 }}>GTS HUB · <span className="boot-v3">V{APP_MAJOR}</span> · BUILT FOR THE COUNTER</div>
         </div>
         <div className="boot-bar"><i /></div>
         <div className="boot-lines">
@@ -1056,15 +1083,18 @@ function Rail({ tech }) {
   const badge = (id) => (id === 'home' && counts.alerts) || (id === 'salesforce' && (counts.inService || counts.openTickets)) || (id === 'assignments' && counts.activeAsg) || (id === 'station' && counts.outItems) || (id === 'management' && counts.broadcasts) || 0;
   return (
     <aside className="rail" aria-label="Navigation">
-      <button className="rail-brand" onClick={() => goTo('home', 'overview')} title="GTS Hub V4 — Home">
+      <button className="rail-brand" onClick={() => goTo('home', 'overview')} title={`GTS Hub V${APP_MAJOR} — Home`}>
         <GTSMark size={40} />
         <span className="rail-brand-text">
-          <span className="brand-name">GTS HUB</span>
-          <span className="brand-sub">V4 · B&amp;H GUEST TECH</span>
+          <span className="brand-name">GTS Hub</span>
+          <span className="brand-sub">Guest Technical Services</span>
         </span>
       </button>
       <nav className="rail-nav">
-        {TABS.filter((t) => (t.id !== 'warranty' || features.warranty !== false) && (t.id !== 'ops' || features.ops !== false)).map((t) => {
+        {TAB_GROUPS.map((g) => ({ g, items: TABS.filter((t) => t.group === g.id && (t.id !== 'warranty' || features.warranty !== false) && (t.id !== 'ops' || features.ops !== false)) })).filter((x) => x.items.length).map(({ g, items }) => (
+        <div key={g.id} className="rail-group">
+        <div className="rail-group-label">{g.label}</div>
+        {items.map((t) => {
           const n = badge(t.id);
           const locked = t.manager && !isManager;
           return (
@@ -1093,8 +1123,11 @@ function Rail({ tech }) {
             </React.Fragment>
           );
         })}
+        </div>
+        ))}
       </nav>
       <div className="rail-foot">
+        <RailGoal />
         <SyncDot sync={sync} onClick={() => goTo('home', 'settings')} rail />
         <button className={`railtech ${tech ? '' : 'is-empty'}`} onClick={openTechPicker} title="Switch tech">
           <Avatar tech={tech} />
@@ -1110,6 +1143,19 @@ function Rail({ tech }) {
         </div>
       </div>
     </aside>
+  );
+}
+
+/** Sidebar footer: today's goal as a live bar. */
+function RailGoal() {
+  const { goal, goTo } = useStore();
+  if (!goal || goal.emphasis === 'off') return null;
+  const done = goal.pct >= 1;
+  return (
+    <button type="button" className={`railgoal ${done ? 'is-done' : goal.onPace ? 'is-pace' : 'is-behind'}`} onClick={() => goTo('stats')} title="Today’s goal — open Stats">
+      <span className="railgoal-top"><b>{goal.today}</b><span>/ {goal.perDay} today</span><em>{done ? 'goal hit' : goal.onPace ? 'on pace' : `${goal.remaining} to go`}</em></span>
+      <span className="railgoal-bar"><i style={{ width: `${Math.round(goal.pct * 100)}%` }} /></span>
+    </button>
   );
 }
 
@@ -1155,8 +1201,8 @@ function Strip({ tech }) {
     <header className="strip">
       <div className="strip-inner">
         <button className="strip-brand hidden-desktop" onClick={() => goTo('home', 'overview')}><GTSMark size={32} /></button>
-        <div className="strip-title hidden-mobile">
-          <div className="eyebrow">{t.hint}</div>
+        <div className="strip-title hidden-mobile" title={t.hint}>
+          <span className="strip-icon"><Icon name={t.icon} size={16} /></span>
           <div className="strip-h"><Decode text={t.label} duration={420} /></div>
         </div>
         <div className="strip-center">
@@ -1172,6 +1218,7 @@ function Strip({ tech }) {
         <div className="strip-right">
           <Clock />
           <button className="searchbtn hidden-mobile" onClick={openPalette} title="Command palette (⌘K)"><Icon name="search" size={15} /><span>Search</span><Kbd>⌘K</Kbd></button>
+          <ThemeButton />
           <button className={`rgb-toggle hidden-mobile ${state.settings.rgb ? 'is-on' : ''}`} onClick={() => api.setSettings({ rgb: !state.settings.rgb })} title={`RGB mode ${state.settings.rgb ? 'on' : 'off'} (R)`} aria-pressed={!!state.settings.rgb}><span className="rgb-toggle-dot" />RGB</button>
           <Btn variant="primary" icon="zap" onClick={() => newTicket()} className="strip-cta" title="Quick log (T)"><span className="hidden-mobile">Quick log</span></Btn>
           {counts.broadcasts > 0 && <button className="strip-bell hidden-mobile" onClick={() => goTo('management')} title={`${counts.broadcasts} team alert${counts.broadcasts > 1 ? 's' : ''} posted`}><Icon name="bell" size={16} /><span className="badge">{counts.broadcasts}</span></button>}
@@ -1328,23 +1375,32 @@ function TechPickerModal({ onClose, first }) {
 // ═══════════════════════════════════════════════════════════════════════════
 //  WHAT'S NEW (V3) + MOBILE "MORE" SHEET
 // ═══════════════════════════════════════════════════════════════════════════
-const V4_HIGHLIGHTS = [
-  ['video', 'Promo screen (4.2)', 'As soon as a customer’s ticket is running, the counter screen plays the GTS promo almost full screen — order #, name, type, what we’re doing, the clock and Done stay along the bottom. Esc minimises it.'],
-  ['harddrive', 'Hard Drive + required details (4.2)', 'New Hard Drive service type. Every ticket now has to say what was done (e.g. “Firmware update”) — it won’t save or finish without it.'],
-  ['scan', 'Scan to start (4.1)', 'Hit Scan (or S) on the Mac to read a barcode with the camera; on the Windows PCs just pull the scanner trigger anywhere. Pick the type with 1–0 and the ticket starts with its clock running — edit it while it runs.'],
-  ['sparkles', 'A Quick Log customers can watch', 'A live 3D stage sits next to the form: every keystroke streams into it, the order number lights up digit by digit, and saving fires a burst. Hit Customer display for full screen.'],
-  ['timer', 'Service clock on every ticket', 'From the first keystroke to Done — pause, resume, edit the times. Stats shows average, median and 90th-percentile service time by type and by tech.'],
-  ['activity', 'Customers per hour', 'Live “this hour” count in the top strip, today’s hour-by-hour chart, average per open hour using real store hours.'],
-  ['shield-check', 'Warranty helper', 'Pick a brand → official warranty / repair page, a QR code the customer scans, and what they need ready.'],
-  ['users', 'Walk-in queue', 'Add people as they arrive, see how long they’ve waited, tap Serve and the Quick Log fills itself in.'],
-  ['shield', 'System settings for IT', 'Store hours, service targets, ticket rules, permissions, auto-lock, privacy purge, webhooks, health endpoint, config export and a technical handoff doc.'],
+const HIGHLIGHTS = [
+  ['sparkles', 'Pick your colour (5.0)', 'Hit Look in the top bar: Dark / Light / Matrix, nine colours or any colour you like, and Soft / Normal / Max glow. It recolours everything — even the 3D core and the rain. RGB still works on top.'],
+  ['grid', 'Redesigned GTS Hub (5.0)', 'A grouped sidebar with a live goal bar, a new top bar, an aurora background in your colour, glowing gradient-edge cards, a rebuilt Home summary and a faster app on every station.'],
+  ['search', 'Salesforce services (4.4)', 'The description is one line that searches the verified Salesforce services as you type — “secure data drop off”, “kit”, “sim”. The service type is picked for you; anything else is kept as typed.'],
+  ['zap', 'Quick log window (4.4)', 'Quick log (top right, or T) opens the live 3D stage over any page — with Scan. Logging plays the animation, then the promo takes over.'],
+  ['headphones', 'Audio type (4.4)', 'Audio replaced Monitors, and the type chips follow how often we use them. Management → System → Services re-sorts old Other tickets.'],
+  ['layers', 'Ops (4.3)', 'Import the Salesforce export, see every order that doesn’t line up, approve fixes in the review queue, turnaround analytics and end-of-day reports.'],
+  ['video', 'Promo screen', 'While a customer’s ticket runs, the counter screen plays the GTS promo with the ticket editable along the bottom — and it works in the full-screen customer display too.'],
+  ['scan', 'Scan to start', 'Camera on the Mac, scanner gun on the PCs: scan, tap the type (it now clearly shows selected), pick the service, Enter.'],
+  ['timer', 'Service clock + per hour', 'Start → Done on every ticket, customers per hour live in the top bar, and full stats by type and tech.'],
 ];
+function TabLoading() {
+  return (
+    <div className="tab-loading" aria-busy="true" aria-label="Loading">
+      <div className="sk sk-title" /><div className="sk sk-line" />
+      <div className="grid cols-4" style={{ marginTop: 18 }}>{[0, 1, 2, 3].map((i) => <div key={i} className="sk sk-card" />)}</div>
+    </div>
+  );
+}
+
 function WhatsNewModal({ onClose, first }) {
   return (
-    <Modal title="GTS Hub V4" sub="More alive at the counter. Ready for the software department." onClose={onClose} icon="sparkles" size="lg"
-      footer={<><span className="faint" style={{ fontSize: 12 }}>Keyboard: 1–9 tabs · T quick log · W walk-in · N check-in · [ sidebar</span><Btn variant="primary" icon="arrow-right" onClick={onClose} autoFocus>{first ? 'Let’s go' : 'Close'}</Btn></>}>
+    <Modal title={`GTS Hub ${APP_MAJOR}.0`} sub="Cleaner, calmer, faster — the same counter tools, designed as one product." onClose={onClose} icon="sparkles" size="lg"
+      footer={<><span className="faint" style={{ fontSize: 12 }}>Keyboard: 0–9 tabs · T quick log · S scan · W walk-in · N check-in · R RGB</span><Btn variant="primary" icon="arrow-right" onClick={onClose} autoFocus>{first ? 'Let’s go' : 'Close'}</Btn></>}>
       <div className="whatsnew">
-        {V4_HIGHLIGHTS.map(([icon, title, desc], i) => (
+        {HIGHLIGHTS.map(([icon, title, desc], i) => (
           <div key={title} className="wn-item fade-up" style={{ '--i': i }}>
             <span className="wn-icon"><Icon name={icon} /></span>
             <div><div className="wn-title">{title}</div><div className="wn-desc">{desc}</div></div>
@@ -1361,7 +1417,7 @@ function MoreSheet({ onClose }) {
     ...TABS.filter((t) => !MOBILE_TABS.includes(t.id)).map((t) => ({ icon: t.icon, label: t.label, hint: t.hint, run: () => goTo(t.id), badge: t.id === 'management' ? counts.broadcasts : 0, lock: t.manager && !isManager })),
     { icon: 'settings', label: 'Settings', hint: 'Tech, sync, theme, backups', run: () => goTo('home', 'settings') },
     { icon: 'activity', label: 'Activity', hint: 'Who did what', run: () => goTo('home', 'activity') },
-    { icon: 'sparkles', label: 'What’s new in V4', hint: 'Release notes', run: openWhatsNew },
+    { icon: 'sparkles', label: `What’s new in ${APP_MAJOR}.0`, hint: 'Release notes', run: openWhatsNew },
     { icon: 'keyboard', label: 'Keyboard shortcuts', hint: '', run: openShortcuts },
     { icon: 'info', label: 'About', hint: `GTS Hub v${APP_VERSION}`, run: openAbout },
   ];
@@ -1420,7 +1476,7 @@ function AboutModal({ onClose }) {
   const n = { t: state.tickets.filter((x) => !x.deletedAt).length, a: state.assignments.filter((x) => !x.deletedAt).length, i: state.inventory.filter((x) => !x.deletedAt).length };
   const storage = sync.status === 'idle' ? `Shared team board (${sync.live ? 'live' : 'polling'}, rev ${sync.rev}) · cached in this browser` : 'This browser';
   return (
-    <Modal title="GTS Hub V4" sub={`Version ${APP_VERSION} · Guest Technical Services command center`} onClose={onClose} size="sm" icon="sparkles">
+    <Modal title={`GTS Hub ${APP_MAJOR}`} sub={`Version ${APP_VERSION} · Guest Technical Services command center`} onClose={onClose} size="sm" icon="sparkles">
       <div className="stack" style={{ gap: 12 }}>
         <div className="row" style={{ gap: 14 }}><GTSMark size={56} /><p className="muted" style={{ lineHeight: 1.6 }}>Quick Log with a stopwatch, Salesforce + UNIX push, live team board, overnight assignments with hold timers and auto-criticality, stats, management alerts and a daily goal — built for the B&amp;H GTS counter.</p></div>
         <dl className="dl">
@@ -1452,7 +1508,7 @@ function CommandPalette({ onClose }) {
     if (matches(q, 'settings tech switch')) cmd('Open Settings', 'settings', () => goTo('home', 'settings'));
     if (matches(q, 'stats numbers report goal')) cmd('Open Stats', 'activity', () => goTo('stats'));
     if (matches(q, 'management alert broadcast team goal connections')) cmd('Open Management', 'shield', () => goTo('management'));
-    if (matches(q, 'whats new v4 release notes')) cmd('What’s new in V4', 'sparkles', () => openWhatsNew());
+    if (matches(q, 'whats new v5 release notes')) cmd(`What’s new in ${APP_MAJOR}.0`, 'sparkles', () => openWhatsNew());
     if (matches(q, 'scan barcode camera scanner gun order')) cmd('Scan a barcode', 'scan', () => { goTo('salesforce'); openScanner(); }, 'S');
     if (matches(q, 'walk in queue waiting add customer')) cmd('Add a walk-in to the queue', 'users', () => { goTo('salesforce'); setTimeout(() => window.dispatchEvent(new CustomEvent('gts:add-walkin')), 80); }, 'W');
     if (matches(q, 'warranty repair manufacturer brand')) cmd('Open the warranty helper', 'shield-check', () => openWarranty());
