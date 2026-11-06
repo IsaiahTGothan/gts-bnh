@@ -29,6 +29,7 @@ import { inferFromDescription, serviceCatalog } from '../lib/sf-services';
 import { ThemeButton } from './ThemePicker';
 import SalesforceSheet from './SalesforceSheet';
 import { SHEET_HASH } from '../lib/sf-sheet';
+import { entryError, gtsLoggedByDay, localDay, realId, upsertDailyCount } from '../lib/real-counts';
 import { ACCENT_VAR_NAMES, accentHex, accentVars, resolveAccent } from '../lib/theme';
 import ScanModal from './ScanModal';
 import PromoStage from './PromoStage';
@@ -311,6 +312,19 @@ function useGTSStore() {
     opsSaveReview: (review, summary) => mutate((p) => act({ ...p, opsReviews: upsertById(p.opsReviews || [], [review]) }, 'ops.review', review.orderKey ? `Order ${review.orderKey}` : 'Ops review', summary || review.status)),
     opsSetResults: (results, summary) => mutate((p) => act({ ...p, opsResults: results }, 'ops.results', 'Clawson results', summary || 'Imported')),
     opsSaveReport: (report) => mutate((p) => act({ ...p, opsReports: upsertById(p.opsReports || [], [report]) }, 'ops.report', `EOD ${report.day}`, report.synthetic ? 'End-of-day report saved (synthetic data)' : 'End-of-day report saved')),
+    // V5.2: real numbers — the day's true Salesforce total (bot on the copy sheet, or by hand in Stats)
+    saveRealCount: ({ day, total, source = 'manual', note = '' }) => {
+      const cur = stateRef.current;
+      const err = entryError({ day, total }, localDay());
+      if (err) return { ok: false, error: err };
+      const prev = (cur.dailyCounts || []).find((c) => c.id === realId(day)) || null;
+      const by = cur.settings.currentTech ? techName(cur.settings.currentTech) : (source === 'sheet' ? 'Copy-sheet bot' : null);
+      const rec = upsertDailyCount(prev && !prev.deletedAt ? prev : null, { day, total, source, by, note, gtsLogged: gtsLoggedByDay(cur).get(day) ?? 0 });
+      mutate((p) => act({ ...p, dailyCounts: upsertById(p.dailyCounts || [], [rec]) }, 'real.count', `Real total ${day}`, `${rec.total} in Salesforce${prev && !prev.deletedAt ? ` (was ${prev.total})` : ''} · ${source === 'sheet' ? 'from the copy sheet' : 'entered by hand'}`));
+      return { ok: true, record: rec };
+    },
+    removeRealCount: (day) => mutate((p) => act({ ...p, dailyCounts: (p.dailyCounts || []).map((c) => (c.id === realId(day) ? stamp(c, { deletedAt: nowISO() }) : c)) }, 'real.count', `Real total ${day}`, 'Removed')),
+
     // V5.1: Salesforce copy sheet — Copied rows become "pushed", Skipped rows stay open with the reason
     sfSheetConfirm: ({ copied = [], skipped = [] }) => {
       const cur = stateRef.current; const ts = nowISO(); const me = cur.settings.currentTech;
@@ -766,7 +780,8 @@ export default function GTSApp() {
   const sfx = useCallback((name) => play(name, state?.settings.sounds), [state?.settings.sounds]);
 
   // ── navigation helpers ───────────────────────────────────────────────
-  const goTo = useCallback((t, sub) => { setTab(t); if (t === 'home' && sub) setHomeTab(sub); if (t === 'firmware' && sub) setFwView(sub); window.scrollTo({ top: 0, behavior: 'smooth' }); }, []);
+  const [statsView, setStatsView] = useState('hub');
+  const goTo = useCallback((t, sub) => { setTab(t); if (t === 'home' && sub) setHomeTab(sub); if (t === 'firmware' && sub) setFwView(sub); if (t === 'stats') setStatsView(sub || 'hub'); window.scrollTo({ top: 0, behavior: 'smooth' }); }, []);
 
   // The Firmware page lives in its own world: the whole shell eases into the hub's brown palette.
   useEffect(() => {
@@ -962,10 +977,10 @@ export default function GTSApp() {
     state, api, now, toast, sfx, sync, connections, goal, isManager, can, features, warrantyBrands, openWarranty, warrantyPick, setWarrantyPick, emitRef, fireHype, accent,
     tab, goTo, homeTab, setHomeTab, fwView, setFwView,
     openAssignment, openTicket, openInventory, openRef, newAssignment, newTicket, confirm, highlight, openUnixScan,
-    openSfSheet, openPalette: () => setPalette(true), openShortcuts: () => setModal({ type: 'shortcuts' }), openAbout: () => setModal({ type: 'about' }),
+    openSfSheet, statsView, setStatsView, openPalette: () => setPalette(true), openShortcuts: () => setModal({ type: 'shortcuts' }), openAbout: () => setModal({ type: 'about' }),
     openWhatsNew: () => setModal({ type: 'whatsnew' }), openTechPicker: () => setModal({ type: 'tech' }), openMore: () => setModal({ type: 'more' }),
     counts,
-  }), [openSfSheet, accent, openScanner, state, api, now, toast, sfx, sync, connections, goal, isManager, can, features, warrantyBrands, openWarranty, warrantyPick, emitRef, fireHype, tab, goTo, homeTab, fwView, openAssignment, openTicket, openInventory, openRef, newAssignment, newTicket, confirm, highlight, openUnixScan, counts]);
+  }), [statsView, openSfSheet, accent, openScanner, state, api, now, toast, sfx, sync, connections, goal, isManager, can, features, warrantyBrands, openWarranty, warrantyPick, emitRef, fireHype, tab, goTo, homeTab, fwView, openAssignment, openTicket, openInventory, openRef, newAssignment, newTicket, confirm, highlight, openUnixScan, counts]);
 
   // warm the split-out tabs once the counter screen is up and idle
   useEffect(() => {
@@ -1406,6 +1421,7 @@ function TechPickerModal({ onClose, first }) {
 //  WHAT'S NEW (V3) + MOBILE "MORE" SHEET
 // ═══════════════════════════════════════════════════════════════════════════
 const HIGHLIGHTS = [
+  ['database', 'Real numbers (5.2)', 'The day’s true Salesforce total, kept apart from what GTS Hub logs: the copy-sheet bot saves it when it finishes, or type it in Stats → Real numbers. Busiest weekdays, a calendar, a 7-day forecast on Home, and how much GTS Hub captured.'],
   ['sparkles', 'Pick your colour (5.0)', 'Hit Look in the top bar: Dark / Light / Matrix, nine colours or any colour you like, and Soft / Normal / Max glow. It recolours everything — even the 3D core and the rain. RGB still works on top.'],
   ['grid', 'Redesigned GTS Hub (5.0)', 'A grouped sidebar with a live goal bar, a new top bar, an aurora background in your colour, glowing gradient-edge cards, a rebuilt Home summary and a faster app on every station.'],
   ['search', 'Salesforce services (4.4)', 'The description is one line that searches the verified Salesforce services as you type — “secure data drop off”, “kit”, “sim”. The service type is picked for you; anything else is kept as typed.'],
@@ -1535,6 +1551,7 @@ function CommandPalette({ onClose }) {
     if (matches(q, 'new assignment intake overnight drop off check in')) cmd('New overnight assignment', 'plus', () => newAssignment(), 'N');
     if (matches(q, 'new ticket salesforce log appointment quick')) cmd('Quick log a ticket', 'zap', () => newTicket(), 'T');
     if (matches(q, 'salesforce copy sheet bot push open tickets excel')) cmd('Salesforce copy sheet', 'send', () => openSfSheet());
+    if (matches(q, 'real numbers salesforce total busiest days enter count')) cmd('Real numbers · enter today’s Salesforce total', 'database', () => goTo('stats', 'real'));
     for (const t of TABS) if (matches(q, `go ${t.label} tab`)) cmd(`Go to ${t.label}`, t.icon, () => goTo(t.id));
     if (matches(q, 'settings tech switch')) cmd('Open Settings', 'settings', () => goTo('home', 'settings'));
     if (matches(q, 'stats numbers report goal')) cmd('Open Stats', 'activity', () => goTo('stats'));

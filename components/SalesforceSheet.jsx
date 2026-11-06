@@ -14,6 +14,7 @@ import { BOT_NEVER, BOT_STEPS, SF_QUEUE_TECH, SF_QUEUE_VIEW, botInstructionsText
 import { copyText, cx, downloadText, fmtDateTime, toCSV } from '../lib/utils';
 import { useStore } from './GTSApp';
 import { useServiceCatalog } from './ServiceInput';
+import { RealTotalBox } from './RealNumbers';
 import { Btn, Icon, Input, Portal } from './ui';
 
 const MARKS_KEY = 'gts-sf-sheet-marks';
@@ -164,6 +165,11 @@ export default function SalesforceSheet({ onClose }) {
           ) : (
             <div className="sfs-empty"><Icon name="check-circle" size={34} /><b>All caught up</b><span>Every Quick Log ticket has been pushed to Salesforce.</span></div>
           )}
+
+          <section className="sfs-real" aria-label="Today’s real total in Salesforce">
+            <div className="sfs-real-step">Last step</div>
+            <RealTotalBox source="sheet" />
+          </section>
         </div>
 
         {rows.length > 0 && (

@@ -20,6 +20,22 @@ Built with Next.js (App Router) + React, a hand-rolled design system (no UI libr
 
 ## What’s new in V5
 
+* **Real numbers (5.2).** A separate category for the day’s true total in Salesforce: every GTS guest/order for that day, what was already there plus what GTS Hub put in. It is kept apart from GTS Hub’s own logging, so a missed Quick Log never fakes the numbers. Days only, no times.
+  * **The bot enters it.** The last step on the copy sheet is *Today’s real total in Salesforce* → **Save real total**. The bot is told to count, not estimate, and to only look, never change anything, while counting.
+  * **Or by hand.** Stats → **Real numbers** → *Enter or fix a day*. Any past day can be entered, and re-entering keeps the old value in history.
+  * **Stats → Real numbers** shows:
+    * real customers and the average per open day;
+    * the **busiest weekday** and the **calendar heat map** (click a day to fix it);
+    * daily bars and a day-by-day table with source, who entered it and notes;
+    * **GTS Hub captured %**, meaning how many real customers never made it into GTS Hub;
+    * CSV export, and **Weekly summary**, a recap to paste into Teams or an email.
+
+    A 0 counts as a closed day, not a slow one.
+  * **Home → Busy days ahead:** the next 7 days, from what each weekday usually brings over the last 8 weeks. Before close it nudges you if today’s real total isn’t in yet.
+  * **New record day** fires the RGB wave burst and a toast when a saved total beats the best day.
+  * The printed **Day report** includes the real total.
+  * Palette: *Real numbers*.
+  * Synced to every station (`dailyCounts`, one tiny record per day, about 2 years kept).
 * **Salesforce copy sheet (5.1).** Quick Log → **Salesforce sheet**, the command palette, or the direct link `gts-hub.vercel.app/#salesforce-sheet` (bookmark it for the bot).
   * It lists every open, not-yet-pushed Quick Log ticket in one spreadsheet-style table, oldest first:
     * GTS ticket and order #;

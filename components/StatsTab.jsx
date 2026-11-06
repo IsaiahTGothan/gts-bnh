@@ -11,12 +11,15 @@ import { fmtDur, hourLabel, hourShort } from '../lib/service';
 import { dayReportHTML, printHTML } from '../lib/print';
 import { dayKey, downloadText, toCSV } from '../lib/utils';
 import { useStore } from './GTSApp';
+import RealNumbersView from './RealNumbersView';
 import { Avatar, BarList, Btn, Chip, Columns, Donut, EmptyState, Heatmap, HoverChart, Icon, KPI, Panel, Ring, Segmented, SplitBar } from './ui';
 
 const RANGES = [{ id: 1, label: 'Today' }, { id: 7, label: '7 days' }, { id: 30, label: '30 days' }, { id: 90, label: '90 days' }, { id: 0, label: 'All time' }];
 
 export default function StatsTab() {
-  const { state, now, goal, toast, goTo, can } = useStore();
+  const { state, now, goal, toast, goTo, can, statsView, setStatsView } = useStore();
+  const view = statsView === 'real' ? 'real' : 'hub';
+  const realDays = (state.dailyCounts || []).filter((c) => !c.deletedAt).length;
   const [days, setDays] = useState(7);
   const st = useMemo(() => computeStats(state, { days, now }), [state, days, now]);
   const T = st.totals, R = st.rates;
@@ -40,7 +43,8 @@ export default function StatsTab() {
   };
   const printDay = () => {
     const today = computeStats(state, { days: 1, now });
-    printHTML(dayReportHTML(today, state.settings, state.management, { dur: fmtDur, pct: fmtPct }));
+    const real = (state.dailyCounts || []).find((c) => c.id === `rc_${dayKey()}` && !c.deletedAt);
+    printHTML(dayReportHTML(today, state.settings, state.management, { dur: fmtDur, pct: fmtPct }, { realTotal: real ? real.total : null }));
   };
   const S = st.service; const P = st.perHour;
   const todayHours = useMemo(() => {
@@ -71,11 +75,17 @@ export default function StatsTab() {
         </div>
         <div className="row wrap">
           <Segmented value={days} onChange={setDays} options={RANGES} />
-          {can('techExport') && <Btn size="sm" icon="download" onClick={exportCsv}>CSV</Btn>}
-          <Btn size="sm" icon="printer" onClick={printDay} title="Print today’s end-of-day report">Day report</Btn>
+          {view === 'hub' && can('techExport') && <Btn size="sm" icon="download" onClick={exportCsv}>CSV</Btn>}
+          {view === 'hub' && <Btn size="sm" icon="printer" onClick={printDay} title="Print today’s end-of-day report">Day report</Btn>}
         </div>
       </div>
 
+      <div className="stats-switch">
+        <Segmented value={view} onChange={setStatsView} options={[{ id: 'hub', label: 'GTS Hub numbers', icon: 'zap' }, { id: 'real', label: 'Real numbers · Salesforce', icon: 'database', count: realDays }]} />
+        <span className="faint" style={{ fontSize: 12.5 }}>{view === 'real' ? 'The day’s true Salesforce total — counted, never estimated.' : 'Everything GTS Hub logged itself, down to the minute.'}</span>
+      </div>
+
+      {view === 'real' ? <RealNumbersView days={days} /> : (<>
       {empty && <div className="mb-4"><EmptyState icon="activity" title={`Nothing logged ${days === 1 ? 'today' : `in the last ${rangeLabel.toLowerCase()}`} yet`} desc="Log a few customers in Quick Log (or load the demo data in Settings) and this page fills in." action={<Btn variant="primary" icon="zap" onClick={() => goTo('salesforce')}>Open Quick Log</Btn>} /></div>}
 
       <div className="stack" style={{ gap: 16 }}>
@@ -243,6 +253,7 @@ export default function StatsTab() {
           </Panel>
         </div>
       </div>
+      </>)}
     </>
   );
 }

@@ -11,6 +11,7 @@ import { computeStats } from '../lib/stats';
 import { fmtDur } from '../lib/service';
 import { onlineOthers, useStore } from './GTSApp';
 import { AppearanceControls } from './ThemePicker';
+import { BusyDaysCard } from './RealNumbers';
 import { AgeBadge, Avatar, BarList, Btn, Chip, Donut, EmptyState, Field, HoverChart, Icon, Input, KPI, Panel, Ring, Segmented, Select, StatusChip, Toggle } from './ui';
 
 function HeroStat({ value, of, label }) {
@@ -145,6 +146,9 @@ function Overview() {
         <KPI label="Ready for pickup" value={ready.length} icon="check-circle" tone="green" onClick={() => goTo('assignments')} delta={<span>{ready.filter((a) => a.readyAt && (now - new Date(a.readyAt)) > 86_400_000).length} waiting 1d+</span>} />
         <KPI label="Closed today" value={doneToday} icon="check" tone="amber" onClick={() => goTo('stats')} delta={<span>pickups + SF pushes</span>} />
       </div>
+
+      {/* ── V5.2: the week ahead, from real Salesforce totals ──────── */}
+      <BusyDaysCard />
 
       <div className="grid cols-3">
         {/* ── Intake (hoverable) ─────────────────────────────────────── */}
